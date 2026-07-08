@@ -1,0 +1,40 @@
+{
+  "chainId": 20250217,
+  "contracts": {
+    "wXP": "0x0000000000000000000000000000000000000000",
+    "factory": "0x0000000000000000000000000000000000000000",
+    "router": "0x0000000000000000000000000000000000000000",
+    "multicall3": "0x0000000000000000000000000000000000000000",
+    "nativeBridgeRouter": "0x0000000000000000000000000000000000000000"
+  },
+  "tokens": {
+    "xUSDC": "0x0000000000000000000000000000000000000000",
+    "xUSDT": "0x0000000000000000000000000000000000000000",
+    "XEF": "0x80252C2D06bbd85699c555fc3633D5B8eE67C9AD"
+  },
+  "router": "0x0000000000000000000000000000000000000000",
+  "factory": "0x0000000000000000000000000000000000000000",
+  "initCodeHash": null,
+  "bridgeRoutes": {
+    "ethereum-usdc": {
+      "sourceChainId": 1,
+      "destinationChainId": 20250217,
+      "sourceRouter": "0x0000000000000000000000000000000000000000",
+      "destinationRouter": "0x0000000000000000000000000000000000000000"
+    },
+    "ethereum-usdt": {
+      "sourceChainId": 1,
+      "destinationChainId": 20250217,
+      "sourceRouter": "0x0000000000000000000000000000000000000000",
+      "destinationRouter": "0x0000000000000000000000000000000000000000"
+    },
+    "ethereum-native": {
+      "sourceChainId": 1,
+      "destinationChainId": 20250217,
+      "sourceAsset": "ETH",
+      "destinationAsset": "XP",
+      "sourceRouter": "0x0000000000000000000000000000000000000000",
+      "destinationRouter": "0x0000000000000000000000000000000000000000"
+    }
+  }
+}

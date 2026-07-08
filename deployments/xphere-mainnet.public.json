@@ -1,0 +1,18 @@
+{
+  "chainId": 20250217,
+  "contracts": {
+    "protocolAdminMultisig": "0x034eD1B37674223308a829Ff350bE4593950C04f",
+    "treasuryMultisig": "0xe78d7044F773134532e0Fbaaf5AB479feeb624C8",
+    "wXP": "0xEce69Df85364bFA5c35F87802Acd35d9DD3379da",
+    "factory": "0x86369FCffa2370E7b1353E46b1794678aE94efdF",
+    "router": "0xCd42e90dC373a2807Ba2c5763A9186430f08bB84",
+    "multicall3": "0x51e5815B7d757d55aAF1d1879aD36C7D32dcfe1C",
+    "wXPxEFPair": "0x1A858990eb730603Ffb1960438c7756ca91B907B"
+  },
+  "tokens": {
+    "XEF": "0x80252C2D06bbd85699c555fc3633D5B8eE67C9AD"
+  },
+  "router": "0xCd42e90dC373a2807Ba2c5763A9186430f08bB84",
+  "factory": "0x86369FCffa2370E7b1353E46b1794678aE94efdF",
+  "bridgeRoutes": {}
+}

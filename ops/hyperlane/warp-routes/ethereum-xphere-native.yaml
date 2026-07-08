@@ -1,0 +1,25 @@
+# Hyperlane Warp Route template for ETH -> xETH on Xphere.
+# ETH and XP are different assets, so mainnet must bridge ETH into synthetic
+# xETH first. Users can then swap xETH into XP/WXP through the Xphere AMM.
+tokens:
+  - chainName: ethereum
+    type: collateralNative
+    name: Ether
+    symbol: ETH
+    decimals: 18
+  - chainName: xphere
+    type: synthetic
+    name: Xphere Bridged ETH
+    symbol: xETH
+    decimals: 18
+options:
+  dailyLimitUsd: 25000
+  totalTvlLimitUsd: 100000
+  owner: "${PROTOCOL_ADMIN_SAFE}"
+  interchainSecurityModule:
+    type: multisig
+    threshold: 2
+    validators:
+      - "${HYPERLANE_VALIDATOR_1}"
+      - "${HYPERLANE_VALIDATOR_2}"
+      - "${HYPERLANE_VALIDATOR_3}"

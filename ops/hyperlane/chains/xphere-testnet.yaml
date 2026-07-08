@@ -1,0 +1,20 @@
+name: xpheretestnet
+displayName: Xphere Testnet
+domainId: 1998991
+chainId: 1998991
+protocol: ethereum
+rpcUrls:
+  - http: https://testnet.x-phere.com
+nativeToken:
+  name: Xphere Testnet
+  symbol: XPT
+  decimals: 18
+blockExplorers:
+  - name: Tamsa Testnet
+    url: https://xpt.tamsa.io
+    apiUrl: https://xpt.tamsa.io/api
+    family: blockscout
+blocks:
+  confirmations: 1
+transactionOverrides:
+  maxPriorityFeePerGas: 1000000000

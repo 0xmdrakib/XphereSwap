@@ -1,0 +1,16 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+  - "ops/*"
+onlyBuiltDependencies:
+  - bufferutil
+  - esbuild
+  - keccak
+  - secp256k1
+  - utf-8-validate
+allowBuilds:
+  bufferutil: true
+  esbuild: true
+  keccak: true
+  secp256k1: true
+  utf-8-validate: true

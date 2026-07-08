@@ -1,0 +1,23 @@
+{
+  "name": "@xphere-swap/hyperlane-ops",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs",
+    "validate:configs": "node scripts/validate-configs.mjs",
+    "validate:artifacts": "node scripts/validate-artifacts.mjs",
+    "render-routes": "node scripts/render-warp-routes.mjs",
+    "sync-artifacts": "node scripts/sync-artifacts.mjs",
+    "check-caps": "node scripts/check-caps.mjs",
+    "check-caps:release": "node scripts/check-caps.mjs --release",
+    "readiness": "node scripts/readiness.mjs",
+    "build": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs",
+    "test": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs",
+    "lint": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs",
+    "typecheck": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}

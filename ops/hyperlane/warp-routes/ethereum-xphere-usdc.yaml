@@ -1,0 +1,25 @@
+# Hyperlane Warp Route template.
+# Fill mailbox/core addresses after `hyperlane core deploy` on Xphere.
+tokens:
+  - chainName: ethereum
+    type: collateral
+    addressOrDenom: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    name: USD Coin
+    symbol: USDC
+    decimals: 6
+  - chainName: xphere
+    type: synthetic
+    name: Xphere Bridged USDC
+    symbol: xUSDC
+    decimals: 6
+options:
+  dailyLimitUsd: 25000
+  totalTvlLimitUsd: 100000
+  owner: "${PROTOCOL_ADMIN_SAFE}"
+  interchainSecurityModule:
+    type: multisig
+    threshold: 2
+    validators:
+      - "${HYPERLANE_VALIDATOR_1}"
+      - "${HYPERLANE_VALIDATOR_2}"
+      - "${HYPERLANE_VALIDATOR_3}"

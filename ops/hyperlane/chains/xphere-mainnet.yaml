@@ -1,0 +1,21 @@
+name: xphere
+displayName: Xphere Mainnet
+domainId: 20250217
+chainId: 20250217
+protocol: ethereum
+rpcUrls:
+  - http: https://en-hkg.x-phere.com
+  - http: https://en-bkk.x-phere.com
+nativeToken:
+  name: Xphere
+  symbol: XP
+  decimals: 18
+blockExplorers:
+  - name: Tamsa Explorer
+    url: https://xp.tamsa.io
+    apiUrl: https://xp.tamsa.io/api
+    family: blockscout
+blocks:
+  confirmations: 1
+transactionOverrides:
+  maxPriorityFeePerGas: 1000000000
