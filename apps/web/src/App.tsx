@@ -143,7 +143,7 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">XP</div>
+          <img className="brand-logo" src="/xphereswap-icon.png" alt="" aria-hidden="true" />
           <h1>Xphere Swap</h1>
         </div>
         <nav className="topnav" aria-label="Primary">

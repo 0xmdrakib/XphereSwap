@@ -138,18 +138,14 @@ a {
   min-width: 0;
 }
 
-.brand-mark {
-  display: grid;
+.brand-logo {
   flex: 0 0 auto;
-  place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border: 1px solid rgba(20, 20, 19, 0.08);
   border-radius: 8px;
   background: var(--tile-dark);
-  color: var(--canvas);
-  font-size: 12px;
-  font-weight: 700;
+  object-fit: cover;
 }
 
 .brand h1 {
