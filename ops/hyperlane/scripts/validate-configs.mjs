@@ -1,170 +1,122 @@
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { IsmConfigSchema } from "@hyperlane-xyz/sdk";
 import YAML from "yaml";
-
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const opsDir = resolve(scriptDir, "..");
-
-const ETH_USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-const ETH_USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
-const XPHERE_MAINNET_RPCS = new Set(["https://en-hkg.x-phere.com", "https://en-bkk.x-phere.com"]);
+import {
+  BASE_USDC,
+  CHAINS,
+  ETHEREUM_USDC,
+  OPS_DIR,
+  ROUTES,
+  TOTAL_TVL_CAP_USD,
+  USDC_DAILY_CAP_UNITS,
+  initialIsmConfig,
+} from "./bridge-config.mjs";
 
 const failures = [];
-const warnings = [];
 
 function fail(message) {
   failures.push(message);
 }
 
-function warn(message) {
-  warnings.push(message);
-}
-
-function isAddressOrPlaceholder(value) {
-  return /^0x[a-fA-F0-9]{40}$/.test(String(value)) || /^\$\{[A-Z0-9_]+\}$/.test(String(value));
+function equal(actual, expected, label) {
+  if (actual !== expected) fail(`${label}: expected ${expected}, got ${actual}`);
 }
 
 async function readYaml(relativePath) {
-  const absolutePath = resolve(opsDir, relativePath);
-  const raw = await readFile(absolutePath, "utf8");
-  return { relativePath, data: YAML.parse(raw) };
+  return YAML.parse(await readFile(resolve(OPS_DIR, relativePath), "utf8"));
 }
 
-function requireEqual(actual, expected, label) {
-  if (actual !== expected) {
-    fail(`${label}: expected ${expected}, got ${actual}`);
-  }
-}
-
-function requireTruthy(value, label) {
-  if (!value) fail(`${label}: missing`);
-}
-
-function validateChainConfig(config, expected) {
-  const { data, relativePath } = config;
-  requireEqual(data.name, expected.name, `${relativePath} name`);
-  requireEqual(data.domainId, expected.domainId, `${relativePath} domainId`);
-  requireEqual(data.chainId, expected.chainId, `${relativePath} chainId`);
-  requireEqual(data.protocol, "ethereum", `${relativePath} protocol`);
-  requireTruthy(data.nativeToken?.symbol, `${relativePath} native token symbol`);
-  requireEqual(data.nativeToken?.decimals, 18, `${relativePath} native token decimals`);
-
-  const rpcUrls = data.rpcUrls?.map((entry) => entry.http).filter(Boolean) ?? [];
-  if (rpcUrls.length === 0) {
-    fail(`${relativePath} rpcUrls: missing`);
-  }
-
-  if (expected.name === "xphere") {
-    requireEqual(data.nativeToken?.symbol, "XP", `${relativePath} native token symbol`);
-    const missingOfficialRpc = [...XPHERE_MAINNET_RPCS].filter((url) => !rpcUrls.includes(url));
-    if (missingOfficialRpc.length > 0) {
-      fail(`${relativePath} rpcUrls: missing official RPC(s) ${missingOfficialRpc.join(", ")}`);
+function validateChain(config, chainName) {
+  const expected = CHAINS[chainName];
+  equal(config.name, chainName, `${expected.metadata} name`);
+  equal(config.chainId, expected.chainId, `${expected.metadata} chainId`);
+  equal(config.domainId, expected.domainId, `${expected.metadata} domainId`);
+  equal(config.protocol, "ethereum", `${expected.metadata} protocol`);
+  equal(config.nativeToken?.decimals, 18, `${expected.metadata} native decimals`);
+  const rpcUrls = config.rpcUrls?.map((entry) => entry.http) || [];
+  if (chainName === "base" && !rpcUrls.includes("${BASE_MAINNET_RPC_URL}")) fail("Base RPC must stay env-driven");
+  if (chainName === "ethereum" && !rpcUrls.includes("${ETHEREUM_MAINNET_RPC_URL}")) fail("Ethereum RPC must stay env-driven");
+  if (chainName === "xphere") {
+    if (!rpcUrls.includes("https://en-hkg.x-phere.com") || !rpcUrls.includes("https://en-bkk.x-phere.com")) {
+      fail("Xphere metadata must retain official fallback RPCs");
     }
-    requireEqual(data.blockExplorers?.[0]?.url, "https://xp.tamsa.io", `${relativePath} explorer`);
-  }
-
-  if (expected.name === "xpheretestnet") {
-    requireEqual(data.nativeToken?.symbol, "XPT", `${relativePath} native token symbol`);
-    if (!rpcUrls.includes("https://testnet.x-phere.com")) {
-      fail(`${relativePath} rpcUrls: missing https://testnet.x-phere.com`);
-    }
-  }
-
-  if (expected.name === "ethereum") {
-    requireEqual(data.nativeToken?.symbol, "ETH", `${relativePath} native token symbol`);
-    if (!rpcUrls.includes("${ETHEREUM_MAINNET_RPC_URL}")) {
-      fail(`${relativePath} rpcUrls: Ethereum mainnet RPC must stay env-driven`);
-    }
-    requireEqual(data.blocks?.confirmations, 12, `${relativePath} confirmations`);
+    equal(config.blockExplorers?.[0]?.url, "https://xp.tamsa.io", "Xphere explorer");
   }
 }
 
-function validateWarpRoute(config, expected) {
-  const { data, relativePath } = config;
-  const tokens = data.tokens ?? [];
-  if (tokens.length !== 2) {
-    fail(`${relativePath} tokens: expected collateral + synthetic entries`);
-    return;
+function validateRoute(config, routeKey) {
+  const expected = ROUTES[routeKey];
+  equal(config.routeId, expected.id, `${expected.template} routeId`);
+  equal(config.asset, expected.asset, `${expected.template} asset`);
+  equal(config.tokens?.length, 3, `${expected.template} token count`);
+  const byChain = Object.fromEntries((config.tokens || []).map((token) => [token.chainName, token]));
+  for (const chainName of Object.keys(CHAINS)) {
+    if (!byChain[chainName]) fail(`${expected.template}: missing ${chainName} token`);
   }
-
-  const collateral = tokens.find((token) => token.chainName === "ethereum");
-  const synthetic = tokens.find((token) => token.chainName === "xphere");
-  requireTruthy(collateral, `${relativePath} ethereum collateral token`);
-  requireTruthy(synthetic, `${relativePath} xphere synthetic token`);
-  if (!collateral || !synthetic) return;
-
-  requireEqual(collateral.type, expected.ethereumType || "collateral", `${relativePath} ethereum token type`);
-  if (expected.ethereumToken) {
-    requireEqual(collateral.addressOrDenom, expected.ethereumToken, `${relativePath} ethereum token address`);
+  equal(byChain.base?.type, routeKey === "eth" ? "collateralNative" : "collateral", `${expected.template} Base type`);
+  equal(byChain.ethereum?.type, routeKey === "eth" ? "collateralNative" : "collateral", `${expected.template} Ethereum type`);
+  equal(byChain.xphere?.type, "synthetic", `${expected.template} Xphere type`);
+  equal(byChain.xphere?.symbol, expected.symbolForChain.xphere, `${expected.template} Xphere symbol`);
+  equal(byChain.xphere?.decimals, expected.decimals, `${expected.template} decimals`);
+  if (routeKey === "usdc") {
+    equal(byChain.base?.addressOrDenom, BASE_USDC, "Base USDC address");
+    equal(byChain.ethereum?.addressOrDenom, ETHEREUM_USDC, "Ethereum USDC address");
+    equal(config.options?.finalSecurity?.rateLimitCapacity, String(USDC_DAILY_CAP_UNITS), "USDC rate capacity");
+  } else {
+    equal(config.options?.finalSecurity?.rateLimitEnv, "BRIDGE_ETH_DAILY_CAP_WEI", "ETH rate capacity env");
   }
-  requireEqual(collateral.symbol, expected.ethereumSymbol, `${relativePath} ethereum token symbol`);
-  requireEqual(collateral.decimals, expected.decimals, `${relativePath} ethereum token decimals`);
-
-  requireEqual(synthetic.type, expected.xphereType || "synthetic", `${relativePath} xphere token type`);
-  requireEqual(synthetic.symbol, expected.xphereSymbol, `${relativePath} xphere token symbol`);
-  requireEqual(synthetic.decimals, expected.decimals, `${relativePath} xphere token decimals`);
-
-  requireEqual(data.options?.dailyLimitUsd, 25000, `${relativePath} daily limit`);
-  requireEqual(data.options?.totalTvlLimitUsd, 100000, `${relativePath} total TVL limit`);
-
-  const owner = data.options?.owner;
-  if (!isAddressOrPlaceholder(owner)) {
-    fail(`${relativePath} owner: expected address or env placeholder`);
+  equal(config.options?.totalTvlLimitUsd, TOTAL_TVL_CAP_USD, `${expected.template} TVL cap`);
+  if (expected.generatedDeployName === expected.deployName) {
+    fail(`${expected.template}: generated output name must not collide with the registry deployment name`);
   }
-
-  const ism = data.options?.interchainSecurityModule;
-  requireEqual(ism?.type, "multisig", `${relativePath} ISM type`);
-  requireEqual(ism?.threshold, 2, `${relativePath} ISM threshold`);
-  const validators = ism?.validators ?? [];
-  if (validators.length !== 3) {
-    fail(`${relativePath} validators: expected 3 validators`);
+  for (const [chainName, chain] of Object.entries(CHAINS)) {
+    equal(config.options?.owners?.[chainName], `\${${chain.ownerEnv}}`, `${expected.template} ${chainName} owner`);
   }
-  for (const validator of validators) {
-    if (!isAddressOrPlaceholder(validator)) {
-      fail(`${relativePath} validator ${validator}: expected address or env placeholder`);
-    }
+  const security = config.options?.initialSecurity;
+  equal(security?.type, "staticAggregationIsm", `${expected.template} initial ISM type`);
+  equal(security?.threshold, 2, `${expected.template} initial ISM threshold`);
+  equal(security?.modules?.[0]?.type, "messageIdMultisigIsm", `${expected.template} multisig type`);
+  equal(security?.modules?.[0]?.threshold, 2, `${expected.template} multisig threshold`);
+  equal(security?.modules?.[0]?.validators?.length, 3, `${expected.template} validators`);
+  equal(security?.modules?.[1]?.type, "pausableIsm", `${expected.template} pause module`);
+  equal(config.options?.finalSecurity?.type, "staticAggregationIsm", `${expected.template} final ISM type`);
+  equal(config.options?.finalSecurity?.threshold, 3, `${expected.template} final ISM threshold`);
+
+  try {
+    IsmConfigSchema.parse(
+      initialIsmConfig(
+        "0x1111111111111111111111111111111111111111",
+        [
+          "0x2222222222222222222222222222222222222222",
+          "0x3333333333333333333333333333333333333333",
+          "0x4444444444444444444444444444444444444444",
+        ],
+      ),
+    );
+  } catch (error) {
+    fail(`${expected.template}: generated ISM does not match pinned SDK (${error.message})`);
   }
 }
 
 async function main() {
-  const [xphere, xphereTestnet, ethereum, usdcRoute, usdtRoute, nativeRoute] = await Promise.all([
-    readYaml("chains/xphere-mainnet.yaml"),
+  const [base, ethereum, xphere, xphereTestnet, ethRoute, usdcRoute, packageJson] = await Promise.all([
+    readYaml(CHAINS.base.metadata),
+    readYaml(CHAINS.ethereum.metadata),
+    readYaml(CHAINS.xphere.metadata),
     readYaml("chains/xphere-testnet.yaml"),
-    readYaml("chains/ethereum-mainnet.yaml"),
-    readYaml("warp-routes/ethereum-xphere-usdc.yaml"),
-    readYaml("warp-routes/ethereum-xphere-usdt.yaml"),
-    readYaml("warp-routes/ethereum-xphere-native.yaml"),
+    readYaml(`warp-routes/${ROUTES.eth.template}`),
+    readYaml(`warp-routes/${ROUTES.usdc.template}`),
+    readFile(resolve(OPS_DIR, "package.json"), "utf8").then(JSON.parse),
   ]);
-
-  validateChainConfig(xphere, { name: "xphere", domainId: 20250217, chainId: 20250217 });
-  validateChainConfig(xphereTestnet, { name: "xpheretestnet", domainId: 1998991, chainId: 1998991 });
-  validateChainConfig(ethereum, { name: "ethereum", domainId: 1, chainId: 1 });
-
-  validateWarpRoute(usdcRoute, {
-    ethereumToken: ETH_USDC,
-    ethereumSymbol: "USDC",
-    xphereSymbol: "xUSDC",
-    decimals: 6,
-  });
-  validateWarpRoute(usdtRoute, {
-    ethereumToken: ETH_USDT,
-    ethereumSymbol: "USDT",
-    xphereSymbol: "xUSDT",
-    decimals: 6,
-  });
-  validateWarpRoute(nativeRoute, {
-    ethereumType: "collateralNative",
-    ethereumSymbol: "ETH",
-    xphereSymbol: "xETH",
-    xphereType: "synthetic",
-    decimals: 18,
-  });
-
-  if (warnings.length > 0) {
-    console.warn(`Warnings (${warnings.length}):`);
-    for (const warning of warnings) console.warn(`- ${warning}`);
-  }
+  validateChain(base, "base");
+  validateChain(ethereum, "ethereum");
+  validateChain(xphere, "xphere");
+  equal(xphereTestnet.chainId, 1998991, "Xphere testnet chainId");
+  validateRoute(ethRoute, "eth");
+  validateRoute(usdcRoute, "usdc");
+  equal(packageJson.dependencies?.["@hyperlane-xyz/cli"], "36.0.0", "Hyperlane CLI pin");
+  equal(packageJson.dependencies?.["@hyperlane-xyz/sdk"], "36.0.0", "Hyperlane SDK pin");
 
   if (failures.length > 0) {
     console.error(`Hyperlane config validation failed (${failures.length}):`);
@@ -172,7 +124,6 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-
   console.log("Hyperlane config validation passed.");
 }
 

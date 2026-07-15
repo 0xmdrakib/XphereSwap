@@ -14,7 +14,6 @@ import {
   Plus,
   RefreshCw,
   Route,
-  Send,
   ShieldCheck,
   Wallet,
   Zap,
@@ -43,24 +42,22 @@ import {
 import { deployments, configuredForSwap } from "./config/deployments";
 import {
   bridgeEthereumChain,
-  bridgeXphereChain,
-  hyperlaneDomains,
   isLocalBridge,
   isLocalSwap,
   swapChain,
 } from "./config/chains";
-import { TokenConfig, bridgeAssets, xphereSwapTokens } from "./config/tokens";
+import { TokenConfig, xphereSwapTokens } from "./config/tokens";
+import { BridgePanel } from "./features/bridge/BridgePanel";
+import { bridgeConfigComplete, bridgeTransactionsEnabled } from "./features/bridge/config";
 import {
   erc20Abi,
   localFaucetAbi,
   uniswapV2FactoryAbi,
   uniswapV2PairAbi,
   uniswapV2RouterAbi,
-  warpRouterAbi,
   wxpAbi,
 } from "./lib/abis";
 import {
-  addressToBytes32,
   applySlippage,
   deadlineTimestamp,
   formatTokenAmount,
@@ -113,14 +110,6 @@ const COINGECKO_SIMPLE_PRICE_URL =
   "https://api.coingecko.com/api/v3/simple/price?ids=xphere,xeffy&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true";
 const LOCAL_FAUCET_TOP_UP_BALANCE_HEX = `0x${parseEther("100").toString(16)}`;
 const CUSTOM_TOKENS_STORAGE_KEY = "xphere-swap:customTokens:v1";
-
-const usdcBridgeReady = Boolean(deployments.ethereum.usdcWarpRouter && deployments.xphere.usdcWarpRouter);
-const usdtBridgeReady = Boolean(deployments.ethereum.usdtWarpRouter && deployments.xphere.usdtWarpRouter);
-const ethBridgeReady = Boolean(
-  deployments.ethereum.nativeWarpRouter &&
-    deployments.xphere.nativeWarpRouter &&
-    (isLocalBridge || deployments.xphere.xeth),
-);
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>("swap");
@@ -1099,183 +1088,6 @@ function LiquidityPanel({ tokens }: { tokens: TokenConfig[] }) {
   );
 }
 
-function BridgePanel() {
-  const [assetSymbol, setAssetSymbol] = useState<string>(bridgeAssets[0].symbol);
-  const [direction, setDirection] = useState<"ethereumToXphere" | "xphereToEthereum">("ethereumToXphere");
-  const [amount, setAmount] = useState("");
-  const [gasQuote, setGasQuote] = useState<bigint>();
-  const [status, setStatus] = useState<TxStatus>(initialStatus);
-
-  const { address } = useAccount();
-  const chainId = useChainId();
-  const asset = bridgeAssets.find((item) => item.symbol === assetSymbol) ?? bridgeAssets[0];
-  const sourceChainId = direction === "ethereumToXphere" ? bridgeEthereumChain.id : bridgeXphereChain.id;
-  const publicClient = usePublicClient({ chainId: sourceChainId });
-  const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
-  const destinationDomain =
-    direction === "ethereumToXphere"
-      ? isLocalBridge
-        ? hyperlaneDomains.localXphere
-        : hyperlaneDomains.xphere
-      : isLocalBridge
-        ? hyperlaneDomains.localEthereum
-        : hyperlaneDomains.ethereum;
-  const sourceIsNative =
-    direction === "ethereumToXphere" ? Boolean(asset.ethereumNative) : Boolean(asset.xphereNative);
-  const sourceToken = sourceIsNative ? undefined : direction === "ethereumToXphere" ? asset.ethereumToken : asset.xphereToken;
-  const sourceRouter = direction === "ethereumToXphere" ? asset.ethereumRouter : asset.xphereRouter;
-  const sourceSymbol = direction === "ethereumToXphere" ? asset.sourceSymbol : asset.destinationSymbol;
-  const destinationSymbol = direction === "ethereumToXphere" ? asset.destinationSymbol : asset.sourceSymbol;
-  const isReady = Boolean(address && publicClient && sourceRouter && (sourceIsNative || sourceToken));
-
-  async function ensureSourceChain() {
-    if (chainId !== sourceChainId) await switchChainAsync({ chainId: sourceChainId });
-  }
-
-  async function wait(hash: Hash) {
-    if (!publicClient) throw new Error("RPC client is unavailable");
-    await waitForSuccess(publicClient, hash);
-  }
-
-  async function quoteGas() {
-    try {
-      if (!publicClient || !sourceRouter) return;
-      await ensureSourceChain();
-      const quote = await publicClient.readContract({
-        address: sourceRouter,
-        abi: warpRouterAbi,
-        functionName: "quoteGasPayment",
-        args: [destinationDomain],
-      });
-      setGasQuote(quote);
-      setStatus({ kind: "idle", text: "" });
-    } catch (error) {
-      setGasQuote(undefined);
-      setStatus({ kind: "error", text: errorText(error) });
-    }
-  }
-
-  async function executeBridge() {
-    try {
-      if (!address || !publicClient || !sourceRouter) return;
-      const parsedAmount = parseTokenAmount(amount, asset.decimals);
-      if (parsedAmount === 0n) return;
-      setStatus({ kind: "working", text: "Preparing bridge" });
-      await ensureSourceChain();
-      const quote =
-        gasQuote ??
-        (await publicClient.readContract({
-          address: sourceRouter,
-          abi: warpRouterAbi,
-          functionName: "quoteGasPayment",
-          args: [destinationDomain],
-        }));
-
-      if (!sourceIsNative && sourceToken) {
-        const allowance = await publicClient.readContract({
-          address: sourceToken,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, sourceRouter],
-        });
-        if (allowance < parsedAmount) {
-          await wait(
-            await writeContractAsync({
-              address: sourceToken,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [sourceRouter, parsedAmount],
-            }),
-          );
-        }
-      }
-
-      setStatus({ kind: "working", text: "Submitting bridge" });
-      const hash = await writeContractAsync({
-        address: sourceRouter,
-        abi: warpRouterAbi,
-        functionName: "transferRemote",
-        args: [destinationDomain, addressToBytes32(address), parsedAmount],
-        value: sourceIsNative ? parsedAmount + quote : quote,
-      });
-      await wait(hash);
-      setGasQuote(quote);
-      setStatus({ kind: "success", text: `Bridge submitted: ${hash.slice(0, 10)}...` });
-    } catch (error) {
-      setStatus({ kind: "error", text: errorText(error) });
-    }
-  }
-
-  return (
-    <Panel title="Bridge" badge={isLocalBridge ? "Local lock/mint demo" : "Hyperlane Warp"}>
-      <div className="route-toggle">
-        <button className={direction === "ethereumToXphere" ? "selected" : ""} onClick={() => setDirection("ethereumToXphere")}>
-          {bridgeEthereumChain.name}
-          <ArrowDownUp size={15} />
-          {bridgeXphereChain.name}
-        </button>
-        <button className={direction === "xphereToEthereum" ? "selected" : ""} onClick={() => setDirection("xphereToEthereum")}>
-          {bridgeXphereChain.name}
-          <ArrowDownUp size={15} />
-          {bridgeEthereumChain.name}
-        </button>
-      </div>
-      <div className="bridge-route-card">
-        <div>
-          <span>From</span>
-          <strong>{sourceSymbol}</strong>
-          <small>{direction === "ethereumToXphere" ? bridgeEthereumChain.name : bridgeXphereChain.name}</small>
-        </div>
-        <ArrowDownUp size={18} />
-        <div>
-          <span>To</span>
-          <strong>{destinationSymbol}</strong>
-          <small>{direction === "ethereumToXphere" ? bridgeXphereChain.name : bridgeEthereumChain.name}</small>
-        </div>
-      </div>
-      <div className="form-grid">
-        <label className="field">
-          <span>Asset</span>
-          <select value={assetSymbol} onChange={(event) => setAssetSymbol(event.target.value)}>
-            {bridgeAssets.map((item) => (
-              <option key={item.symbol} value={item.symbol}>
-                {item.symbol}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Amount</span>
-          <input value={amount} onChange={(event) => setAmount(sanitizeDecimal(event.target.value, asset.decimals))} placeholder="0.00" inputMode="decimal" />
-        </label>
-      </div>
-      <div className="details-grid">
-        <DetailCard label="Remote gas" value={gasQuote ? `${formatEther(gasQuote)} native` : "-"} />
-        <DetailCard label="Wallet sends" value={sourceIsNative ? `${amount || "0"} ${sourceSymbol} + gas` : "Token + gas"} />
-        <DetailCard label="Daily cap" value="$25,000" />
-        <DetailCard label="Beta TVL cap" value="$100,000" />
-      </div>
-      {!usdcBridgeReady && !usdtBridgeReady && !ethBridgeReady ? (
-        <div className="status-line warning">
-          <span>Bridge routes are staged for Hyperlane rollout. Mainnet swap and liquidity are live now.</span>
-        </div>
-      ) : null}
-      <div className="actions">
-        <button className="secondary" onClick={quoteGas} disabled={!isReady}>
-          <RefreshCw size={16} />
-          Quote gas
-        </button>
-        <button onClick={executeBridge} disabled={!isReady}>
-          <Send size={16} />
-          Bridge
-        </button>
-      </div>
-      <StatusLine status={status} />
-    </Panel>
-  );
-}
-
 function StatusPanel({
   tokens,
   onAddToken,
@@ -1438,9 +1250,18 @@ function StatusPanel({
     <Panel title="Status" badge="Mainnet beta gated">
       <div className="status-grid">
         <ReadinessItem label="Swap contracts" ready={configuredForSwap} />
-        <ReadinessItem label="Ethereum USDC route" ready={usdcBridgeReady} />
-        <ReadinessItem label="Ethereum USDT route" ready={usdtBridgeReady} />
-        <ReadinessItem label={isLocalBridge ? "ETH/XP route" : "ETH/xETH route"} ready={ethBridgeReady} />
+        <ReadinessItem
+          label="Bridge route records"
+          ready={bridgeConfigComplete}
+          readyText="Configured"
+          blockedText="Not configured"
+        />
+        <ReadinessItem
+          label="Bridge public state"
+          ready={bridgeTransactionsEnabled}
+          readyText="Released"
+          blockedText="Not live"
+        />
         <ReadinessItem label="XEF configured" ready={Boolean(deployments.xphere.xef)} />
         <ReadinessItem label="Demo faucets" ready={xphereFaucetReady || ethereumFaucetReady} />
       </div>
@@ -1457,7 +1278,6 @@ function StatusPanel({
         <AddressRow label="Factory" value={deployments.xphere.factory} />
         <AddressRow label="WXP" value={deployments.xphere.wxp} />
         <AddressRow label="xUSDC" value={deployments.xphere.xusdc} />
-        <AddressRow label="xUSDT" value={deployments.xphere.xusdt} />
         <AddressRow label="xETH" value={deployments.xphere.xeth} />
         <AddressRow label="XEF" value={deployments.xphere.xef} />
         <AddressRow label="XP faucet" value={deployments.xphere.localFaucet} />
@@ -1539,9 +1359,20 @@ function ReadinessCard({ tokens }: { tokens: TokenConfig[] }) {
         <ShieldCheck size={17} />
       </div>
       <ReadinessItem label="Swap contracts" ready={configuredForSwap} compact />
-      <ReadinessItem label="USDC bridge" ready={usdcBridgeReady} compact />
-      <ReadinessItem label="USDT bridge" ready={usdtBridgeReady} compact />
-      <ReadinessItem label={isLocalBridge ? "ETH/XP bridge" : "ETH/xETH bridge"} ready={ethBridgeReady} compact />
+      <ReadinessItem
+        label="Bridge route records"
+        ready={bridgeConfigComplete}
+        readyText="Configured"
+        blockedText="Not configured"
+        compact
+      />
+      <ReadinessItem
+        label="Bridge public state"
+        ready={bridgeTransactionsEnabled}
+        readyText="Released"
+        blockedText="Not live"
+        compact
+      />
       <div className="token-strip">
         {tokens.map((token) => (
           <span key={`${token.symbol}-${token.address ?? "missing"}`} className={token.address ? "token-pill" : "token-pill muted"}>
@@ -1560,18 +1391,33 @@ function BridgeRoutesCard() {
         <span>Bridge Routes</span>
         <Route size={17} />
       </div>
-      <RouteLine label={isLocalBridge ? "ETH -> XP" : "ETH -> xETH"} ready={ethBridgeReady} />
-      <RouteLine label="USDC -> xUSDC" ready={usdcBridgeReady} />
-      <RouteLine label="USDT -> xUSDT" ready={usdtBridgeReady} />
+      <RouteLine label="Ethereum/Base ETH <-> Xphere xETH" ready={bridgeConfigComplete} />
+      <RouteLine label="Ethereum/Base USDC <-> Xphere xUSDC" ready={bridgeConfigComplete} />
+      <RouteLine
+        label="Public bridge state"
+        ready={bridgeTransactionsEnabled}
+        readyText="Released"
+        blockedText="Not live"
+      />
     </article>
   );
 }
 
-function RouteLine({ label, ready }: { label: string; ready: boolean }) {
+function RouteLine({
+  label,
+  ready,
+  readyText = "Configured",
+  blockedText = "Not configured",
+}: {
+  label: string;
+  ready: boolean;
+  readyText?: string;
+  blockedText?: string;
+}) {
   return (
     <div className="route-line">
       <span>{label}</span>
-      <strong>{ready ? "Ready" : "Config"}</strong>
+      <strong>{ready ? readyText : blockedText}</strong>
     </div>
   );
 }
@@ -1676,12 +1522,24 @@ function DetailCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ReadinessItem({ label, ready, compact }: { label: string; ready: boolean; compact?: boolean }) {
+function ReadinessItem({
+  label,
+  ready,
+  compact,
+  readyText = "Ready",
+  blockedText = "Blocked",
+}: {
+  label: string;
+  ready: boolean;
+  compact?: boolean;
+  readyText?: string;
+  blockedText?: string;
+}) {
   return (
     <div className={ready ? `ready-item ok${compact ? " compact" : ""}` : `ready-item warn${compact ? " compact" : ""}`}>
       {ready ? <CheckCircle2 size={17} /> : <CircleAlert size={17} />}
       <span>{label}</span>
-      <strong>{ready ? "Ready" : "Blocked"}</strong>
+      <strong>{ready ? readyText : blockedText}</strong>
     </div>
   );
 }

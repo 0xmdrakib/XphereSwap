@@ -1,11 +1,18 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+  MAINNET_ACK,
+  SECURITY_APPLY_ACK,
+  ethDailyCap,
+  isAddress,
+  isPrivateKey,
+  isUrl,
+  readEnv,
+} from "../ops/hyperlane/scripts/bridge-config.mjs";
 
 const ROOT = process.cwd();
 const OUT = resolve(ROOT, "docs", "mainnet-inputs.generated.md");
 const OUT_VALUES = resolve(ROOT, "docs", "operator-values.missing.generated.json");
-const MAINNET_ACK = "I_UNDERSTAND_MAINNET_BETA";
 const strict = process.argv.includes("--strict");
 const PUBLIC_XPHERE_RPCS = new Set([
   "https://en-hkg.x-phere.com",
@@ -13,230 +20,161 @@ const PUBLIC_XPHERE_RPCS = new Set([
   "https://mainnet.xphere-rpc.com",
 ]);
 
-const ZERO = "0x0000000000000000000000000000000000000000";
-
 const sections = [
   {
-    title: "Private and RPC Inputs",
+    title: "Private And RPC Inputs",
     items: [
-      ["DEPLOYER_PRIVATE_KEY", "Private key for the deployment wallet. Put this in .env only; do not paste it in chat."],
-      ["XPHERE_MAINNET_RPC_URL", "Dedicated Xphere mainnet RPC. Public RPC works for dev probes, but beta should use a dedicated endpoint."],
-      ["ETHEREUM_MAINNET_RPC_URL", "Ethereum mainnet RPC for Hyperlane and funding checks."],
-      ["SEPOLIA_RPC_URL", "Sepolia RPC for bridge rehearsal before mainnet release."],
-      ["SKIP_SEPOLIA_REHEARSAL", "Set true only when the operator intentionally bypasses Sepolia and deploys direct to mainnet."],
-      ["MAINNET_BETA_ACK", `Must be ${MAINNET_ACK} before live mainnet transactions.`],
+      ["DEPLOYER_PRIVATE_KEY", "Deployment wallet key. Keep it only in the ignored local .env."],
+      ["XPHERE_MAINNET_RPC_URL", "Dedicated Xphere mainnet RPC."],
+      ["ETHEREUM_MAINNET_RPC_URL", "Dedicated Ethereum mainnet RPC."],
+      ["BASE_MAINNET_RPC_URL", "Dedicated Base mainnet RPC."],
+      ["SEPOLIA_RPC_URL", "Rehearsal RPC unless SKIP_SEPOLIA_REHEARSAL=true is explicitly reviewed."],
+      ["MAINNET_BETA_ACK", `Must equal ${MAINNET_ACK} before any live deployment command.`],
     ],
   },
   {
-    title: "Admin and Treasury",
+    title: "Chain-Specific Safe Owners",
     items: [
-      ["PROTOCOL_ADMIN_SAFE", "Admin multisig address. Ethereum should use Safe; Xphere should use Safe or the chosen multisig admin."],
-      ["TREASURY_SAFE", "Separate fee/protocol treasury multisig address."],
-      ["ALLOW_ETHEREUM_PROTOCOL_MULTISIG", "Set true to let the orchestrator deploy ProtocolMultisig admin/treasury on Ethereum instead of using existing Safe addresses."],
-      ["XPHERE_PROTOCOL_ADMIN_SAFE", "Optional Xphere-only ProtocolMultisig address from `pnpm deploy:admin:xphere-mainnet`."],
-      ["XPHERE_TREASURY_SAFE", "Optional Xphere-only treasury multisig address from `pnpm deploy:admin:xphere-mainnet`."],
-      ["SAFE_OWNER_1", "Owner 1 of the 3-of-5 admin group."],
-      ["SAFE_OWNER_2", "Owner 2 of the 3-of-5 admin group."],
-      ["SAFE_OWNER_3", "Owner 3 of the 3-of-5 admin group."],
-      ["SAFE_OWNER_4", "Owner 4 of the 3-of-5 admin group."],
-      ["SAFE_OWNER_5", "Owner 5 of the 3-of-5 admin group."],
-      ["SAFE_THRESHOLD", "Must be 3."],
+      ["ETHEREUM_PROTOCOL_ADMIN_SAFE", "Ethereum route owner and Pausable ISM owner Safe."],
+      ["BASE_PROTOCOL_ADMIN_SAFE", "Base route owner and Pausable ISM owner Safe."],
+      ["XPHERE_PROTOCOL_ADMIN_SAFE", "Xphere route owner and Pausable ISM owner Safe."],
+      ["PROTOCOL_ADMIN_SAFE", "Legacy value only; it is not accepted as a bridge owner fallback."],
     ],
   },
   {
-    title: "Hyperlane Operators",
+    title: "Hyperlane Operators And Safety",
     items: [
-      ["HYPERLANE_VALIDATOR_1", "Validator signer address on host 1."],
-      ["HYPERLANE_VALIDATOR_2", "Validator signer address on host 2."],
-      ["HYPERLANE_VALIDATOR_3", "Validator signer address on host 3."],
-      ["HYPERLANE_RELAYER_ADDRESS", "Relayer funding/monitoring address."],
-      ["BRIDGE_CAPS_ACTIVE", "Must be true only after bridge caps are configured and monitored."],
-      ["BRIDGE_CAPS_LAST_REVIEWED_AT", "ISO timestamp of the latest cap/TVL review before public beta."],
+      ["HYPERLANE_VALIDATOR_1", "Validator signer 1."],
+      ["HYPERLANE_VALIDATOR_2", "Validator signer 2."],
+      ["HYPERLANE_VALIDATOR_3", "Validator signer 3."],
+      ["HYPERLANE_RELAYER_ADDRESS", "Funded relayer address monitored on all three chains."],
+      ["ETHEREUM_MAILBOX", "Verified Ethereum Mailbox contract."],
+      ["BASE_MAILBOX", "Verified Base Mailbox contract."],
+      ["XPHERE_MAILBOX", "Deployed and verified Xphere Mailbox contract."],
+      ["BRIDGE_ETH_DAILY_CAP_WEI", "Reviewed ETH destination capacity, positive and divisible by 86400."],
+      ["BRIDGE_ETH_DAILY_CAP_REVIEWED", "Must be true after cap review."],
+      ["BRIDGE_CAPS_ACTIVE", "Must be true after monitoring and pause controls are active."],
+      ["BRIDGE_CAPS_LAST_REVIEWED_AT", "ISO timestamp no older than seven days at release."],
+      ["BRIDGE_SECURITY_APPLY_ACK", `Must equal ${SECURITY_APPLY_ACK} before phase-two live apply.`],
     ],
   },
   {
-    title: "Bridge Outputs To Record After Deployment",
+    title: "Recorded Route Outputs",
     items: [
-      ["XPHERE_XUSDC_TOKEN", "Xphere synthetic USDC token from Hyperlane USDC route."],
-      ["XPHERE_XUSDT_TOKEN", "Xphere synthetic USDT token from Hyperlane USDT route."],
-      ["XPHERE_XETH_TOKEN", "Xphere synthetic ETH token from Hyperlane ETH route."],
-      ["VITE_ETHEREUM_USDC_WARP_ROUTER", "Ethereum USDC Warp Route router."],
-      ["VITE_XPHERE_USDC_WARP_ROUTER", "Xphere xUSDC Warp Route router."],
-      ["VITE_ETHEREUM_USDT_WARP_ROUTER", "Ethereum USDT Warp Route router."],
-      ["VITE_XPHERE_USDT_WARP_ROUTER", "Xphere xUSDT Warp Route router."],
-      ["VITE_ETHEREUM_NATIVE_WARP_ROUTER", "Ethereum native ETH Warp Route router."],
-      ["VITE_XPHERE_NATIVE_WARP_ROUTER", "Xphere xETH Warp Route router."],
-    ],
-  },
-  {
-    title: "Liquidity Release Inputs",
-    items: [
-      ["SEED_MAINNET_LIQUIDITY", "Set true only when the deployment wallet holds the initial pool tokens."],
-      ["LIQUIDITY_MAINNET_ACK", "Must be I_UNDERSTAND_LIQUIDITY_SEEDING before live liquidity seeding."],
-      ["LIQUIDITY_WXP_PER_STABLE_POOL", "WXP amount for WXP/xUSDC and WXP/xUSDT pools."],
-      ["LIQUIDITY_STABLE_PER_WXP_POOL", "xUSDC or xUSDT amount paired with WXP."],
-      ["LIQUIDITY_STABLE_STABLE_AMOUNT", "xUSDC and xUSDT amounts for the stable pool."],
-      ["SEED_XETH_LIQUIDITY", "Set true when xETH is deployed and funded for ETH-to-XP UX."],
-      ["LIQUIDITY_WXP_FOR_XETH_POOL", "WXP amount for WXP/xETH pool."],
-      ["LIQUIDITY_XETH_FOR_WXP_POOL", "xETH amount for WXP/xETH pool."],
+      ["XPHERE_XUSDC_TOKEN", "Single shared xUSDC synthetic token on Xphere."],
+      ["XPHERE_XETH_TOKEN", "Single shared xETH synthetic token on Xphere."],
+      ["VITE_ETHEREUM_USDC_WARP_ROUTER", "Ethereum USDC collateral router."],
+      ["VITE_BASE_USDC_WARP_ROUTER", "Base USDC collateral router."],
+      ["VITE_XPHERE_USDC_WARP_ROUTER", "Xphere xUSDC synthetic router."],
+      ["VITE_ETHEREUM_NATIVE_WARP_ROUTER", "Ethereum native ETH router."],
+      ["VITE_BASE_NATIVE_WARP_ROUTER", "Base native ETH router."],
+      ["VITE_XPHERE_NATIVE_WARP_ROUTER", "Xphere xETH synthetic router."],
+      ["VITE_BRIDGE_RELEASED", "Keep false until every release gate and delivery drill passes."],
     ],
   },
 ];
 
-function isAddress(value) {
-  const normalized = String(value || "").toLowerCase();
-  return /^0x[a-fA-F0-9]{40}$/.test(normalized) && normalized !== ZERO;
-}
-
-function isPrivateKey(value) {
-  return /^0x[a-fA-F0-9]{64}$/.test(String(value || ""));
-}
-
-function isUrl(value) {
-  try {
-    const url = new URL(String(value || ""));
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-async function readEnv() {
-  const env = { ...process.env };
-  const envPath = resolve(ROOT, ".env");
-  if (!existsSync(envPath)) return env;
-  const raw = await readFile(envPath, "utf8");
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match || env[match[1]] !== undefined) continue;
-    env[match[1]] = match[2].replace(/^["']|["']$/g, "");
-  }
-  return env;
-}
-
 function statusFor(key, value, env) {
   if (key === "DEPLOYER_PRIVATE_KEY") return isPrivateKey(value) ? "READY" : "NEEDED";
-  if (key === "XPHERE_PROTOCOL_ADMIN_SAFE" || key === "XPHERE_TREASURY_SAFE") {
-    return isAddress(value) ? "READY" : "LATER";
+  if (key === "XPHERE_MAINNET_RPC_URL") {
+    return isUrl(value) && !PUBLIC_XPHERE_RPCS.has(value) ? "READY" : "NEEDED";
   }
-  if ((key === "PROTOCOL_ADMIN_SAFE" || key === "TREASURY_SAFE") && env.ALLOW_ETHEREUM_PROTOCOL_MULTISIG === "true") {
-    return isAddress(value) ? "READY" : "LATER";
-  }
-  if (key === "ALLOW_ETHEREUM_PROTOCOL_MULTISIG") return value === "true" ? "READY" : "LATER";
-  if (key === "XPHERE_MAINNET_RPC_URL") return isUrl(value) && !PUBLIC_XPHERE_RPCS.has(value) ? "READY" : "NEEDED";
   if (key === "SEPOLIA_RPC_URL" && env.SKIP_SEPOLIA_REHEARSAL === "true") return "READY";
-  if (key === "SKIP_SEPOLIA_REHEARSAL") return value === "true" ? "READY" : "LATER";
-  if (key.endsWith("_URL")) return isUrl(value) ? "READY" : "NEEDED";
+  if (key.endsWith("_RPC_URL")) return isUrl(value) ? "READY" : "NEEDED";
   if (key === "MAINNET_BETA_ACK") return value === MAINNET_ACK ? "READY" : "NEEDED";
-  if (key === "BRIDGE_CAPS_ACTIVE") return value === "true" ? "READY" : "NEEDED";
+  if (key === "BRIDGE_SECURITY_APPLY_ACK") return value === SECURITY_APPLY_ACK ? "READY" : "NEEDED";
+  if (key === "BRIDGE_ETH_DAILY_CAP_WEI") return ethDailyCap(env) ? "READY" : "NEEDED";
+  if (key === "BRIDGE_ETH_DAILY_CAP_REVIEWED" || key === "BRIDGE_CAPS_ACTIVE") {
+    return value === "true" ? "READY" : "NEEDED";
+  }
   if (key === "BRIDGE_CAPS_LAST_REVIEWED_AT") {
-    const date = new Date(value || "");
-    return value && !Number.isNaN(date.getTime()) ? "READY" : "NEEDED";
+    return value && !Number.isNaN(new Date(value).getTime()) ? "READY" : "NEEDED";
   }
-  if (key === "SAFE_THRESHOLD") return value === "3" ? "READY" : "NEEDED";
-  if (key === "SEED_MAINNET_LIQUIDITY") return value === "true" ? "READY" : "LATER";
-  if (key === "SEED_XETH_LIQUIDITY") return value === "true" ? "READY" : "LATER";
-  if (key === "LIQUIDITY_MAINNET_ACK") {
-    return value === "I_UNDERSTAND_LIQUIDITY_SEEDING" ? "READY" : "LATER";
-  }
-  if (key.startsWith("LIQUIDITY_")) return value ? "READY" : "LATER";
-  if (key.startsWith("VITE_") || key.startsWith("XPHERE_X")) return isAddress(value) ? "READY" : "LATER";
-  if (key.includes("SAFE") || key.includes("VALIDATOR") || key.includes("RELAYER")) {
+  if (key === "VITE_BRIDGE_RELEASED") return value === "true" ? "RELEASE" : "LATER";
+  if (key === "PROTOCOL_ADMIN_SAFE") return value ? "LATER" : "READY";
+  if (key.includes("SAFE") || key.includes("VALIDATOR") || key.includes("RELAYER") || key.includes("MAILBOX")) {
     return isAddress(value) ? "READY" : "NEEDED";
   }
+  if (key.startsWith("VITE_") || key.startsWith("XPHERE_X")) return isAddress(value) ? "READY" : "LATER";
   return value ? "READY" : "NEEDED";
 }
 
 function displayValue(key, value) {
   if (!value) return "";
-  if (key === "DEPLOYER_PRIVATE_KEY") return "<set>";
   if (key.includes("PRIVATE")) return "<set>";
+  if (key.endsWith("_RPC_URL")) return "<set>";
   return value;
+}
+
+function defaultValue(key) {
+  if (key === "MAINNET_BETA_ACK") return MAINNET_ACK;
+  if (key === "BRIDGE_SECURITY_APPLY_ACK") return SECURITY_APPLY_ACK;
+  if (key === "BRIDGE_ETH_DAILY_CAP_REVIEWED" || key === "BRIDGE_CAPS_ACTIVE") return "true";
+  return "";
 }
 
 async function main() {
   const env = await readEnv();
   const lines = [
-    "# Mainnet Inputs Generated Checklist",
+    "# XphereSwap Bridge Mainnet Inputs",
     "",
-    "Generated from the current `.env`. Private values are never printed.",
+    "Generated from the current ignored `.env`. Private values and RPC URLs are never printed.",
     "",
   ];
-
-  const summary = { READY: 0, NEEDED: 0, LATER: 0 };
+  const summary = { READY: 0, NEEDED: 0, LATER: 0, RELEASE: 0 };
   const needed = [];
   const valuesTemplate = {};
 
   for (const section of sections) {
     lines.push(`## ${section.title}`, "");
-    lines.push("| Status | Key | Current | Why it matters |");
-    lines.push("|---|---|---|---|");
-    for (const [key, description] of section.items) {
+    lines.push("| Status | Key | Current | Purpose |", "|---|---|---|---|");
+    for (const [key, purpose] of section.items) {
       const status = statusFor(key, env[key], env);
       summary[status] += 1;
       if (status === "NEEDED") {
         needed.push(key);
-        valuesTemplate[key] = defaultValueForMissingKey(key);
+        valuesTemplate[key] = defaultValue(key);
       }
-      lines.push(`| ${status} | \`${key}\` | ${displayValue(key, env[key]) || "-"} | ${description} |`);
+      lines.push(`| ${status} | \`${key}\` | ${displayValue(key, env[key]) || "-"} | ${purpose} |`);
     }
     lines.push("");
   }
 
-  lines.push("## Command Order", "");
-  lines.push("```bash");
-  lines.push("pnpm mainnet:inputs");
-  lines.push("pnpm mainnet:orchestrate");
-  lines.push("# After the dry run is clean and the deployer is funded:");
-  lines.push("pnpm mainnet:orchestrate:live");
-  lines.push("# After bridge operators, ownership, route addresses, and liquidity are ready:");
-  lines.push("pnpm mainnet:orchestrate:release");
-  lines.push("");
-  lines.push("# Manual sequence, if you do not use the orchestrator:");
-  lines.push("pnpm mainnet:predeploy");
-  lines.push("pnpm bridge:core:deploy");
-  lines.push("pnpm bridge:sync-artifacts");
-  lines.push("pnpm bridge:record-core --mailbox 0x... --interchain-gas-paymaster 0x... --validator-announce 0x... --interchain-security-module 0x...");
-  lines.push("pnpm bridge:prepare-registry");
-  lines.push("pnpm bridge:render-routes");
-  lines.push("pnpm bridge:hyperlane -- warp deploy --id USDC/ethereum-xphere");
-  lines.push("pnpm bridge:hyperlane -- warp deploy --id USDT/ethereum-xphere");
-  lines.push("pnpm bridge:hyperlane -- warp deploy --id ETH/ethereum-xphere");
-  lines.push("pnpm bridge:sync-artifacts");
-  lines.push("pnpm bridge:record-route usdc --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x...");
-  lines.push("pnpm bridge:record-route usdt --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x...");
-  lines.push("pnpm bridge:record-route native --ethereum-router 0x... --xphere-router 0x... --xphere-token 0xXethToken");
-  lines.push("pnpm deploy:xphere-mainnet");
-  lines.push("pnpm mainnet:predeploy:release");
-  lines.push("pnpm release:mainnet-beta");
-  lines.push("```", "");
+  lines.push(
+    "## Command Order",
+    "",
+    "```bash",
+    "pnpm mainnet:orchestrate",
+    "# Future live deployment after review and funding:",
+    "pnpm mainnet:orchestrate:live:node22",
+    "",
+    "# Manual route sequence:",
+    "pnpm bridge:prepare-registry",
+    "pnpm bridge:render-routes",
+    "pnpm bridge:hyperlane -- warp deploy --id ETH/base-ethereum-xphere",
+    "pnpm bridge:hyperlane -- warp deploy --id USDC/base-ethereum-xphere",
+    "pnpm bridge:sync-artifacts",
+    "pnpm bridge:record-route eth --base-router 0x... --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x... --base-mailbox 0x... --ethereum-mailbox 0x... --xphere-mailbox 0x... --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...",
+    "pnpm bridge:record-route usdc --base-router 0x... --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x... --base-mailbox 0x... --ethereum-mailbox 0x... --xphere-mailbox 0x... --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...",
+    "pnpm bridge:render-security",
+    "pnpm bridge:apply-security:live",
+    "pnpm bridge:record-security eth --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...",
+    "pnpm bridge:record-security usdc --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...",
+    "```",
+    "",
+  );
 
   await mkdir(resolve(ROOT, "docs"), { recursive: true });
   await writeFile(OUT, `${lines.join("\n")}\n`);
   await writeFile(OUT_VALUES, `${JSON.stringify(valuesTemplate, null, 2)}\n`);
 
-  console.log("Mainnet input checklist:");
-  console.log(`READY=${summary.READY} NEEDED=${summary.NEEDED} LATER=${summary.LATER}`);
-  if (needed.length > 0) {
-    console.log(`Needed now: ${needed.join(", ")}`);
-  } else {
-    console.log("No immediate human inputs are missing.");
-  }
-  console.log("Wrote docs/mainnet-inputs.generated.md");
-  console.log("Wrote docs/operator-values.missing.generated.json");
-
-  if (strict && summary.NEEDED > 0) process.exitCode = 1;
-}
-
-function defaultValueForMissingKey(key) {
-  if (key === "MAINNET_BETA_ACK") return MAINNET_ACK;
-  if (key === "SAFE_THRESHOLD") return "3";
-  if (key === "BRIDGE_CAPS_ACTIVE") return "true";
-  if (key === "SKIP_SEPOLIA_REHEARSAL") return "false";
-  if (key === "ALLOW_ETHEREUM_PROTOCOL_MULTISIG") return "false";
-  return "";
+  console.log("Bridge mainnet input checklist:");
+  console.log(
+    `READY=${summary.READY} NEEDED=${summary.NEEDED} LATER=${summary.LATER} RELEASE=${summary.RELEASE}`,
+  );
+  console.log(needed.length > 0 ? `Needed before live deployment: ${needed.join(", ")}` : "Live deployment inputs are present.");
+  console.log("Generated ignored operator checklist files under docs/.");
+  if (strict && needed.length > 0) process.exitCode = 1;
 }
 
 main().catch((error) => {

@@ -70,16 +70,6 @@ function isSwapMvp(env) {
   );
 }
 
-function hasFullBetaLiquidity(artifact) {
-  return (
-    artifact?.bridgeRoutes?.seededLiquidity?.xethEnabled === true &&
-    isAddress(artifact?.contracts?.wXPxUSDCPair) &&
-    isAddress(artifact?.contracts?.wXPxUSDTPair) &&
-    isAddress(artifact?.contracts?.xUSDCxUSDTPair) &&
-    isAddress(artifact?.contracts?.wXPxETHPair)
-  );
-}
-
 function assertMainnetIntent(env, artifact) {
   const swapMvp = isSwapMvp(env);
   if (env.MAINNET_BETA_ACK !== MAINNET_ACK) {
@@ -124,17 +114,8 @@ function assertMainnetIntent(env, artifact) {
   if (!swapMvp && !hasToken(env, artifact, "XPHERE_XUSDC_TOKEN", "VITE_XPHERE_XUSDC", "xUSDC")) {
     throw new Error("Refusing mainnet run: set XPHERE_XUSDC_TOKEN or record the Hyperlane USDC route before deploying the mainnet swap");
   }
-  if (!swapMvp && !hasToken(env, artifact, "XPHERE_XUSDT_TOKEN", "VITE_XPHERE_XUSDT", "xUSDT")) {
-    throw new Error("Refusing mainnet run: set XPHERE_XUSDT_TOKEN or record the Hyperlane USDT route before deploying the mainnet swap");
-  }
   if (releaseMode && !hasToken(env, artifact, "XPHERE_XETH_TOKEN", "VITE_XPHERE_XETH", "xETH")) {
     throw new Error("Refusing release mode: deploy/record the ETH -> xETH Hyperlane route before public beta");
-  }
-  if (releaseMode && env.SEED_MAINNET_LIQUIDITY !== "true") {
-    throw new Error("Refusing release mode: set SEED_MAINNET_LIQUIDITY=true after funding the liquidity wallet");
-  }
-  if (releaseMode && env.SEED_XETH_LIQUIDITY !== "true" && !hasFullBetaLiquidity(artifact)) {
-    throw new Error("Refusing release mode: set SEED_XETH_LIQUIDITY=true and seed WXP/xETH liquidity for ETH-to-XP UX");
   }
 }
 
@@ -180,16 +161,11 @@ async function main() {
     await run("seed-liquidity", ["seed:liquidity:xphere-mainnet"], env);
   }
 
-  const postDeployArtifact = await readJsonIfExists("deployments/xphere-mainnet.local.json");
-  if (releaseMode && !hasFullBetaLiquidity(postDeployArtifact)) {
-    throw new Error("Refusing release mode: WXP/xUSDC, WXP/xUSDT, xUSDC/xUSDT, and WXP/xETH liquidity must be recorded");
-  }
-
   await run("verify", ["verify:xphere-mainnet"], {
     ...env,
     VERIFY_XPHERE_SWAP_MVP: isSwapMvp(env) ? "true" : env.VERIFY_XPHERE_SWAP_MVP,
     VERIFY_REQUIRE_LIQUIDITY: env.SEED_MAINNET_LIQUIDITY === "true" ? "true" : "false",
-    VERIFY_REQUIRE_STABLES: isSwapMvp(env) ? "false" : env.VERIFY_REQUIRE_STABLES,
+    VERIFY_REQUIRE_STABLES: env.VERIFY_REQUIRE_STABLES || "false",
   });
   await run("sync-web-env", ["sync:web-env:xphere-mainnet"], env);
   await run("build-web", ["build:web"], env);
@@ -201,9 +177,9 @@ async function main() {
 
   if (releaseMode) {
     await run("bridge-readiness", ["bridge:readiness"], env);
-    console.log("Mainnet beta release gates passed.");
+    console.log("Bridge-related release checks passed without requiring swap liquidity changes.");
   } else {
-    console.log("Xphere mainnet swap deployment pipeline completed. Run pnpm release:mainnet-beta after bridge artifacts and liquidity are ready.");
+    console.log("Xphere mainnet swap deployment pipeline completed. Bridge release remains a separate gated workflow.");
   }
 }
 

@@ -1,34 +1,38 @@
 {
-  "chainId": 1,
-  "remoteChainId": 20250217,
+  "aggregateTvlLimitUsd": 100000,
   "ethUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+  "origins": {
+    "ethereum": {
+      "chainId": 1,
+      "rpcEnv": "ETHEREUM_MAINNET_RPC_URL",
+      "artifact": "deployments/ethereum-mainnet.local.json"
+    },
+    "base": {
+      "chainId": 8453,
+      "rpcEnv": "BASE_MAINNET_RPC_URL",
+      "artifact": "deployments/base-mainnet.local.json"
+    }
+  },
   "routes": {
-    "USDC": {
-      "template": "ethereum-xphere-usdc.yaml",
-      "routeKey": "xphere-usdc",
-      "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "usdc": {
+      "template": "base-ethereum-xphere-usdc.yaml",
       "decimals": 6,
       "priceUsd": "1",
-      "dailyLimitUsd": 25000,
-      "totalTvlLimitUsd": 100000
+      "dailyCapacityUnits": "24999926400",
+      "tokens": {
+        "ethereum": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+      }
     },
-    "USDT": {
-      "template": "ethereum-xphere-usdt.yaml",
-      "routeKey": "xphere-usdt",
-      "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-      "decimals": 6,
-      "priceUsd": "1",
-      "dailyLimitUsd": 25000,
-      "totalTvlLimitUsd": 100000
-    },
-    "ETH": {
-      "template": "ethereum-xphere-native.yaml",
-      "routeKey": "xphere-native",
-      "token": "ETH",
+    "eth": {
+      "template": "base-ethereum-xphere-eth.yaml",
       "decimals": 18,
       "priceSource": "chainlink-eth-usd",
-      "dailyLimitUsd": 25000,
-      "totalTvlLimitUsd": 100000
+      "dailyCapacityEnv": "BRIDGE_ETH_DAILY_CAP_WEI",
+      "tokens": {
+        "ethereum": "ETH",
+        "base": "ETH"
+      }
     }
   }
 }

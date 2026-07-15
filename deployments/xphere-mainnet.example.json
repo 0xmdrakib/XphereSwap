@@ -5,36 +5,54 @@
     "factory": "0x0000000000000000000000000000000000000000",
     "router": "0x0000000000000000000000000000000000000000",
     "multicall3": "0x0000000000000000000000000000000000000000",
-    "nativeBridgeRouter": "0x0000000000000000000000000000000000000000"
+    "hyperlaneMailbox": "0x0000000000000000000000000000000000000000"
   },
   "tokens": {
     "xUSDC": "0x0000000000000000000000000000000000000000",
-    "xUSDT": "0x0000000000000000000000000000000000000000",
+    "xETH": "0x0000000000000000000000000000000000000000",
     "XEF": "0x80252C2D06bbd85699c555fc3633D5B8eE67C9AD"
   },
   "router": "0x0000000000000000000000000000000000000000",
   "factory": "0x0000000000000000000000000000000000000000",
   "initCodeHash": null,
   "bridgeRoutes": {
-    "ethereum-usdc": {
-      "sourceChainId": 1,
-      "destinationChainId": 20250217,
-      "sourceRouter": "0x0000000000000000000000000000000000000000",
-      "destinationRouter": "0x0000000000000000000000000000000000000000"
+    "eth": {
+      "standard": "hyperlane-warp-route",
+      "routeId": "ETH/base-ethereum-xphere",
+      "mailbox": "0x0000000000000000000000000000000000000000",
+      "router": "0x0000000000000000000000000000000000000000",
+      "token": "0x0000000000000000000000000000000000000000",
+      "tokenSymbol": "xETH",
+      "interchainSecurityModule": "0x0000000000000000000000000000000000000000",
+      "owner": "0x0000000000000000000000000000000000000000",
+      "securityApplied": false,
+      "remoteDomains": {
+        "base": 8453,
+        "ethereum": 1
+      },
+      "remoteRouters": {
+        "base": "0x0000000000000000000000000000000000000000",
+        "ethereum": "0x0000000000000000000000000000000000000000"
+      }
     },
-    "ethereum-usdt": {
-      "sourceChainId": 1,
-      "destinationChainId": 20250217,
-      "sourceRouter": "0x0000000000000000000000000000000000000000",
-      "destinationRouter": "0x0000000000000000000000000000000000000000"
-    },
-    "ethereum-native": {
-      "sourceChainId": 1,
-      "destinationChainId": 20250217,
-      "sourceAsset": "ETH",
-      "destinationAsset": "XP",
-      "sourceRouter": "0x0000000000000000000000000000000000000000",
-      "destinationRouter": "0x0000000000000000000000000000000000000000"
+    "usdc": {
+      "standard": "hyperlane-warp-route",
+      "routeId": "USDC/base-ethereum-xphere",
+      "mailbox": "0x0000000000000000000000000000000000000000",
+      "router": "0x0000000000000000000000000000000000000000",
+      "token": "0x0000000000000000000000000000000000000000",
+      "tokenSymbol": "xUSDC",
+      "interchainSecurityModule": "0x0000000000000000000000000000000000000000",
+      "owner": "0x0000000000000000000000000000000000000000",
+      "securityApplied": false,
+      "remoteDomains": {
+        "base": 8453,
+        "ethereum": 1
+      },
+      "remoteRouters": {
+        "base": "0x0000000000000000000000000000000000000000",
+        "ethereum": "0x0000000000000000000000000000000000000000"
+      }
     }
   }
 }

@@ -1,12 +1,14 @@
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import {
+  ROUTES,
+  isAddress,
+  readArtifact,
+  routeComplete,
+} from "../ops/hyperlane/scripts/bridge-config.mjs";
 
 const ROOT = process.cwd();
 const EXECUTE_LIVE = process.argv.includes("--execute-live");
 const RELEASE = process.argv.includes("--release");
-
 const CORE_KEYS = [
   "hyperlaneMailbox",
   "hyperlaneInterchainGasPaymaster",
@@ -14,56 +16,11 @@ const CORE_KEYS = [
   "hyperlaneInterchainSecurityModule",
 ];
 
-const ROUTES = [
-  {
-    name: "USDC",
-    id: "USDC/ethereum-xphere",
-    routeArg: "usdc",
-    ethRouterKey: "usdcWarpRouter",
-    xphereRouterKey: "usdcWarpRouter",
-    xphereTokenKey: "xUSDC",
-    recordExample:
-      "pnpm bridge:record-route usdc --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x...",
-  },
-  {
-    name: "USDT",
-    id: "USDT/ethereum-xphere",
-    routeArg: "usdt",
-    ethRouterKey: "usdtWarpRouter",
-    xphereRouterKey: "usdtWarpRouter",
-    xphereTokenKey: "xUSDT",
-    recordExample:
-      "pnpm bridge:record-route usdt --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x...",
-  },
-  {
-    name: "ETH/xETH",
-    id: "ETH/ethereum-xphere",
-    routeArg: "native",
-    ethRouterKey: "nativeWarpRouter",
-    xphereRouterKey: "nativeWarpRouter",
-    xphereTokenKey: "xETH",
-    recordExample:
-      "pnpm bridge:record-route native --ethereum-router 0x... --xphere-router 0x... --xphere-token 0xXethToken",
-  },
-];
-
 function pnpmCommand(args) {
   if (process.platform === "win32") {
     return { command: "cmd.exe", args: ["/d", "/s", "/c", "pnpm", ...args] };
   }
   return { command: "pnpm", args };
-}
-
-function isAddress(value) {
-  const normalized = String(value || "").toLowerCase();
-  return /^0x[a-fA-F0-9]{40}$/.test(normalized) &&
-    normalized !== "0x0000000000000000000000000000000000000000";
-}
-
-async function readJsonIfExists(relativePath) {
-  const path = resolve(ROOT, relativePath);
-  if (!existsSync(path)) return undefined;
-  return JSON.parse(await readFile(path, "utf8"));
 }
 
 function run(label, args) {
@@ -83,38 +40,6 @@ function run(label, args) {
   });
 }
 
-function hasCore(xphere) {
-  return CORE_KEYS.every((key) => isAddress(xphere?.contracts?.[key]));
-}
-
-function hasSwap(xphere) {
-  return (
-    isAddress(xphere?.contracts?.wXP) &&
-    isAddress(xphere?.contracts?.factory) &&
-    isAddress(xphere?.contracts?.router) &&
-    isAddress(xphere?.contracts?.multicall3)
-  );
-}
-
-function hasRoute(route, ethereum, xphere) {
-  return (
-    isAddress(ethereum?.contracts?.[route.ethRouterKey]) &&
-    isAddress(xphere?.contracts?.[route.xphereRouterKey]) &&
-    isAddress(xphere?.tokens?.[route.xphereTokenKey])
-  );
-}
-
-function liquidityReady(xphere) {
-  const seeded = xphere?.bridgeRoutes?.seededLiquidity;
-  return Boolean(
-    seeded &&
-      isAddress(xphere?.contracts?.wXPxUSDCPair) &&
-      isAddress(xphere?.contracts?.wXPxUSDTPair) &&
-      isAddress(xphere?.contracts?.xUSDCxUSDTPair) &&
-      isAddress(xphere?.contracts?.wXPxETHPair),
-  );
-}
-
 function printManualStop(title, lines) {
   console.log("");
   console.log(title);
@@ -123,96 +48,125 @@ function printManualStop(title, lines) {
 
 async function loadArtifacts() {
   return {
-    xphere: await readJsonIfExists("deployments/xphere-mainnet.local.json"),
-    ethereum: await readJsonIfExists("deployments/ethereum-mainnet.local.json"),
+    base: await readArtifact("base"),
+    ethereum: await readArtifact("ethereum"),
+    xphere: await readArtifact("xphere"),
   };
 }
 
-async function main() {
-  console.log("Xphere mainnet orchestrator");
-  console.log(EXECUTE_LIVE ? "Mode: LIVE TRANSACTION EXECUTION" : "Mode: readiness/dry run");
+function hasXphereCore(artifacts) {
+  return CORE_KEYS.every((key) => isAddress(artifacts.xphere?.contracts?.[key]));
+}
 
-  await run("mainnet input checklist", ["mainnet:inputs"]);
-  if (EXECUTE_LIVE) {
-    await run("Node.js live deployment version", ["node:check:live"]);
-    await run("deployer funding probe", ["mainnet:funding"]);
-    await run("mainnet admin bootstrap", ["mainnet:bootstrap-admins"]);
-  }
-  await run("mainnet predeploy gate", RELEASE ? ["mainnet:predeploy:release"] : ["mainnet:predeploy"]);
+function routeRecorded(artifacts, routeKey, requireSecurity = false) {
+  return Object.keys(artifacts).every((chainName) =>
+    routeComplete(artifacts[chainName], routeKey, chainName, { requireSecurity }),
+  );
+}
 
-  let { xphere, ethereum } = await loadArtifacts();
+function recordRouteExample(routeKey) {
+  return [
+    `pnpm bridge:record-route ${routeKey}`,
+    "--base-router 0x... --ethereum-router 0x... --xphere-router 0x...",
+    "--xphere-token 0x...",
+    "--base-mailbox 0x... --ethereum-mailbox 0x... --xphere-mailbox 0x...",
+    "--base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...",
+  ].join(" ");
+}
 
-  if (!EXECUTE_LIVE) {
-    printManualStop("Dry run complete. Nothing live was sent.", [
-      "Run `pnpm mainnet:orchestrate --execute-live` only from a funded deployer with real RPCs and Safe/validator addresses in `.env`.",
-      "Run `pnpm mainnet:orchestrate --execute-live --release` only after route ownership, relayer, validators, liquidity, and emergency controls are ready.",
-    ]);
-    return;
-  }
+async function dryRun() {
+  console.log("Mode: non-live bridge completion gate");
+  await run("bridge config and artifact validation", ["bridge:validate"]);
+  await run("bridge cap configuration", ["bridge:caps"]);
+  await run("security apply command preview", ["bridge:apply-security"]);
+  await run("web preview build", ["build:web"]);
+  printManualStop("Non-live orchestration gate passed. No transaction was sent.", [
+    "The Bridge UI remains locked unless VITE_BRIDGE_RELEASED=true and every route address is configured.",
+    "Use `pnpm mainnet:orchestrate:live:node22` only after team review, operator funding, and Safe/validator setup.",
+    "Use the release command only after phase-two security, delivery drills, monitoring, and emergency-pause approval.",
+  ]);
+}
 
-  if (!hasCore(xphere)) {
+async function liveRun() {
+  console.log(RELEASE ? "Mode: LIVE bridge release checks" : "Mode: LIVE bridge deployment");
+  await run("Node.js live deployment version", ["node:check:live"]);
+  await run("mainnet input checklist", ["mainnet:inputs:strict"]);
+  await run("deployer funding probe", ["mainnet:funding"]);
+  await run("mainnet admin validation", ["mainnet:bootstrap-admins"]);
+  await run("mainnet predeploy gate", ["mainnet:predeploy"]);
+
+  let artifacts = await loadArtifacts();
+  if (!hasXphereCore(artifacts)) {
     await run("deploy Xphere Hyperlane core", ["bridge:core:deploy"]);
     await run("sync Hyperlane artifacts", ["bridge:sync-artifacts"]);
-    ({ xphere, ethereum } = await loadArtifacts());
-    if (!hasCore(xphere)) {
-      printManualStop("Hyperlane core deploy finished, but core addresses are not recorded yet.", [
-        "Copy the Mailbox, InterchainGasPaymaster, ValidatorAnnounce, and ISM addresses from the Hyperlane output.",
-        "Record them with `pnpm bridge:record-core --mailbox 0x... --interchain-gas-paymaster 0x... --validator-announce 0x... --interchain-security-module 0x...`.",
-        "Then run `pnpm mainnet:orchestrate --execute-live` again.",
+    artifacts = await loadArtifacts();
+    if (!hasXphereCore(artifacts)) {
+      printManualStop("Xphere Hyperlane core deployment needs address recording.", [
+        "Record Mailbox, InterchainGasPaymaster, ValidatorAnnounce, and default ISM with `pnpm bridge:record-core ...`.",
+        "Run the live orchestrator again after verifying the recorded contracts on the explorer.",
       ]);
       return;
     }
   }
 
   await run("prepare Hyperlane registry", ["bridge:prepare-registry"]);
-  await run("render Warp Routes", ["bridge:render-routes"]);
+  await run("render phase-one Warp Routes", ["bridge:render-routes"]);
 
-  for (const route of ROUTES) {
-    ({ xphere, ethereum } = await loadArtifacts());
-    if (hasRoute(route, ethereum, xphere)) continue;
+  for (const [routeKey, route] of Object.entries(ROUTES)) {
+    artifacts = await loadArtifacts();
+    if (routeRecorded(artifacts, routeKey)) continue;
 
-    await run(`deploy ${route.name} Warp Route`, ["bridge:hyperlane", "--", "warp", "deploy", "--id", route.id]);
+    await run(`deploy ${route.id}`, ["bridge:hyperlane", "--", "warp", "deploy", "--id", route.id]);
     await run("sync Hyperlane artifacts", ["bridge:sync-artifacts"]);
-    ({ xphere, ethereum } = await loadArtifacts());
-    if (!hasRoute(route, ethereum, xphere)) {
-      printManualStop(`${route.name} Warp Route deploy finished, but route addresses are not recorded yet.`, [
-        "Copy the Ethereum router, Xphere router, and Xphere synthetic token from the Hyperlane output.",
-        `Record it with \`${route.recordExample}\`.`,
-        "Then run `pnpm mainnet:orchestrate --execute-live` again.",
+    artifacts = await loadArtifacts();
+    if (!routeRecorded(artifacts, routeKey)) {
+      printManualStop(`${route.id} deployment needs normalized address recording.`, [
+        "Copy all three routers, Mailboxes, phase-one ISMs, and the Xphere synthetic token from the reviewed deployment output.",
+        `Record them with \`${recordRouteExample(routeKey)}\`.`,
+        "Verify every address before running the live orchestrator again.",
       ]);
       return;
     }
   }
 
-  ({ xphere } = await loadArtifacts());
-  if (!hasSwap(xphere)) {
-    await run("deploy Xphere swap", ["deploy:xphere-mainnet"]);
-  } else {
-    console.log("");
-    console.log("Swap deployment artifact already exists; skipping WXP/factory/router deployment.");
+  const securityComplete = Object.keys(ROUTES).every((routeKey) =>
+    routeRecorded(artifacts, routeKey, true),
+  );
+  if (!securityComplete) {
+    await run("apply phase-two bridge security", ["bridge:apply-security:live"]);
+    artifacts = await loadArtifacts();
+    const unrecorded = Object.keys(ROUTES).filter(
+      (routeKey) => !routeRecorded(artifacts, routeKey, true),
+    );
+    if (unrecorded.length > 0) {
+      printManualStop("Phase-two security was applied but final ISM addresses still need recording.", [
+        ...unrecorded.map(
+          (routeKey) =>
+            `Run \`pnpm bridge:record-security ${routeKey} --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...\`.`,
+        ),
+        "Verify the 3-of-3 aggregation and pause/rate-limit ownership before continuing.",
+      ]);
+      return;
+    }
   }
 
-  ({ xphere } = await loadArtifacts());
-  if (!liquidityReady(xphere)) {
-    printManualStop("Swap is deployed, but full mainnet UX still needs liquidity.", [
-      "Fund the deployer with XP, xUSDC, xUSDT, and xETH.",
-      "Set `SEED_MAINNET_LIQUIDITY=true`, `SEED_XETH_LIQUIDITY=true`, and `LIQUIDITY_MAINNET_ACK=I_UNDERSTAND_LIQUIDITY_SEEDING`.",
-      "Run `pnpm deploy:xphere-mainnet` again to seed WXP/xUSDC, WXP/xUSDT, xUSDC/xUSDT, and WXP/xETH.",
-    ]);
-    return;
-  }
-
-  await run("sync web env", ["sync:web-env:xphere-mainnet"]);
-  await run("build web", ["build:web"]);
+  await run("sync web environment", ["sync:web-env:xphere-mainnet"]);
+  await run("build web preview", ["build:web"]);
 
   if (RELEASE) {
-    await run("public beta release", ["release:mainnet-beta"]);
+    await run("bridge release gate", ["release:mainnet-beta"]);
   } else {
-    await run("release gate preview", ["mainnet:predeploy:release"]);
+    printManualStop("Bridge deployment workflow is recorded, but public release remains locked.", [
+      "Keep VITE_BRIDGE_RELEASED=false until all eight low-value delivery tests and the emergency-pause drill pass.",
+      "The existing Xphere swap and liquidity deployment were not changed by this bridge workflow.",
+    ]);
   }
+}
 
-  console.log("");
-  console.log("Mainnet orchestration complete.");
+async function main() {
+  console.log("XphereSwap mainnet bridge orchestrator");
+  if (EXECUTE_LIVE) await liveRun();
+  else await dryRun();
 }
 
 main().catch((error) => {

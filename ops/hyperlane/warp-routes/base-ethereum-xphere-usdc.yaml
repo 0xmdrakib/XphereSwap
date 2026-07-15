@@ -1,0 +1,43 @@
+# Deployment-ready shared USDC route using the official collateral token on
+# each origin chain and a single synthetic xUSDC token on Xphere.
+routeId: USDC/base-ethereum-xphere
+asset: USDC
+tokens:
+  - chainName: base
+    type: collateral
+    addressOrDenom: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    name: USD Coin
+    symbol: USDC
+    decimals: 6
+  - chainName: ethereum
+    type: collateral
+    addressOrDenom: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    name: USD Coin
+    symbol: USDC
+    decimals: 6
+  - chainName: xphere
+    type: synthetic
+    name: Xphere Bridged USDC
+    symbol: xUSDC
+    decimals: 6
+options:
+  totalTvlLimitUsd: 100000
+  owners:
+    base: "${BASE_PROTOCOL_ADMIN_SAFE}"
+    ethereum: "${ETHEREUM_PROTOCOL_ADMIN_SAFE}"
+    xphere: "${XPHERE_PROTOCOL_ADMIN_SAFE}"
+  initialSecurity:
+    type: staticAggregationIsm
+    threshold: 2
+    modules:
+      - type: messageIdMultisigIsm
+        threshold: 2
+        validators:
+          - "${HYPERLANE_VALIDATOR_1}"
+          - "${HYPERLANE_VALIDATOR_2}"
+          - "${HYPERLANE_VALIDATOR_3}"
+      - type: pausableIsm
+  finalSecurity:
+    type: staticAggregationIsm
+    threshold: 3
+    rateLimitCapacity: "24999926400"

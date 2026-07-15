@@ -1,267 +1,165 @@
-import { access, readFile } from "node:fs/promises";
-import { constants } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  CHAINS,
+  MAINNET_ACK,
+  ROUTES,
+  SECURITY_APPLY_ACK,
+  ethDailyCap,
+  isAddress,
+  isPrivateKey,
+  isUrl,
+  readArtifact,
+  readEnv,
+  routeComplete,
+  validatorsFromEnv,
+} from "./bridge-config.mjs";
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const repoDir = resolve(scriptDir, "../../..");
-
-const MAINNET_ACK = "I_UNDERSTAND_MAINNET_BETA";
 const PUBLIC_XPHERE_RPCS = new Set([
   "https://en-hkg.x-phere.com",
   "https://en-bkk.x-phere.com",
   "https://mainnet.xphere-rpc.com",
 ]);
-
 const checks = [];
 
 function add(status, label, detail) {
   checks.push({ status, label, detail });
 }
+const ok = (label, detail = "") => add("OK", label, detail);
+const warn = (label, detail = "") => add("WARN", label, detail);
+const blocked = (label, detail = "") => add("BLOCKED", label, detail);
 
-function ok(label, detail = "") {
-  add("OK", label, detail);
+async function rpc(rpcUrl, method, params) {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.error) throw new Error(payload.error?.message || `${method} failed`);
+  return payload.result;
 }
 
-function warn(label, detail = "") {
-  add("WARN", label, detail);
-}
-
-function blocked(label, detail = "") {
-  add("BLOCKED", label, detail);
-}
-
-function isAddress(value) {
-  const normalized = String(value || "").toLowerCase();
-  return /^0x[a-fA-F0-9]{40}$/.test(normalized) && normalized !== "0x0000000000000000000000000000000000000000";
-}
-
-function isPrivateKey(value) {
-  return /^0x[a-fA-F0-9]{64}$/.test(String(value || ""));
-}
-
-function isUrl(value) {
-  try {
-    const url = new URL(String(value || ""));
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-async function exists(path) {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readEnv() {
-  const env = { ...process.env };
-  const envPath = resolve(repoDir, ".env");
-  if (!(await exists(envPath))) return env;
-
-  const raw = await readFile(envPath, "utf8");
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match) continue;
-    const [, key, value] = match;
-    if (process.env[key] !== undefined) continue;
-    env[key] = value.replace(/^["']|["']$/g, "");
-  }
-  return env;
-}
-
-function requireAddress(env, key) {
-  const value = env[key];
-  if (isAddress(value)) ok(key, "address set");
-  else blocked(key, "missing or invalid EVM address");
-}
-
-function requireUrl(env, key) {
-  const value = env[key];
-  if (isUrl(value)) ok(key, "URL set");
-  else blocked(key, "missing or invalid URL");
-}
-
-function requireWarpRouter(env, key) {
-  const value = env[key];
-  if (isAddress(value)) ok(key, "router address set");
-  else blocked(key, "missing until Hyperlane Warp Route deployment is complete");
-}
-
-async function validateArtifact(relativePath, expectedChainId, requiredContracts = [], requiredTokens = []) {
-  const artifactPath = resolve(repoDir, relativePath);
-  if (!(await exists(artifactPath))) {
-    blocked(relativePath, "deployment artifact not written yet");
+async function requireContract(rpcUrl, address, label) {
+  if (!isAddress(address)) {
+    blocked(label, "missing or invalid address");
     return;
   }
-
   try {
-    const artifact = JSON.parse(await readFile(artifactPath, "utf8"));
-    if (artifact.chainId === expectedChainId) ok(`${relativePath} chainId`, String(expectedChainId));
-    else blocked(`${relativePath} chainId`, `expected ${expectedChainId}, got ${artifact.chainId}`);
-
-    for (const contractName of requiredContracts) {
-      const value = artifact.contracts?.[contractName] ?? artifact[contractName];
-      if (isAddress(value)) ok(`${relativePath} ${contractName}`, "address recorded");
-      else blocked(`${relativePath} ${contractName}`, "missing address");
-    }
-    for (const tokenName of requiredTokens) {
-      const value = artifact.tokens?.[tokenName];
-      if (isAddress(value)) ok(`${relativePath} ${tokenName}`, "token address recorded");
-      else blocked(`${relativePath} ${tokenName}`, "missing token address");
-    }
+    const code = await rpc(rpcUrl, "eth_getCode", [address, "latest"]);
+    if (code && code !== "0x") ok(label, "contract code verified");
+    else blocked(label, "address has no contract code");
   } catch (error) {
-    blocked(relativePath, `invalid JSON: ${error.message}`);
+    blocked(label, `RPC verification failed: ${error.message}`);
   }
 }
 
-function validateSafe(env) {
-  requireAddress(env, "PROTOCOL_ADMIN_SAFE");
-  requireAddress(env, "TREASURY_SAFE");
-
-  const admin = String(env.PROTOCOL_ADMIN_SAFE || "").toLowerCase();
-  const treasury = String(env.TREASURY_SAFE || "").toLowerCase();
-  if (admin && treasury && admin === treasury) {
-    blocked("Safe separation", "PROTOCOL_ADMIN_SAFE and TREASURY_SAFE must be different");
-  } else if (admin && treasury) {
-    ok("Safe separation", "admin and treasury are separate");
-  }
-
-  const owners = [];
-  for (let index = 1; index <= 5; index += 1) {
-    const key = `SAFE_OWNER_${index}`;
-    const value = env[key];
-    if (isAddress(value)) {
-      ok(key, "owner address set");
-      owners.push(value.toLowerCase());
-    } else {
-      blocked(key, "missing or invalid Safe owner address");
-    }
-  }
-
-  if (owners.length === 5 && new Set(owners).size === owners.length) {
-    ok("Safe owners unique", "5 unique owners");
+function validateReviewDate(env) {
+  const reviewed = new Date(env.BRIDGE_CAPS_LAST_REVIEWED_AT || "");
+  const age = Date.now() - reviewed.getTime();
+  if (!Number.isNaN(reviewed.getTime()) && age >= 0 && age <= 7 * 86_400_000) {
+    ok("BRIDGE_CAPS_LAST_REVIEWED_AT", reviewed.toISOString());
   } else {
-    blocked("Safe owners unique", "owners must be 5 unique addresses");
-  }
-
-  if (env.SAFE_THRESHOLD === "3") ok("SAFE_THRESHOLD", "3-of-5");
-  else blocked("SAFE_THRESHOLD", "must be 3 for beta");
-}
-
-function validateHyperlaneOperators(env) {
-  const validators = [];
-  for (let index = 1; index <= 3; index += 1) {
-    const key = `HYPERLANE_VALIDATOR_${index}`;
-    const value = env[key];
-    if (isAddress(value)) {
-      ok(key, "validator address set");
-      validators.push(value.toLowerCase());
-    } else {
-      blocked(key, "missing validator signer address");
-    }
-  }
-
-  if (validators.length === 3 && new Set(validators).size === validators.length) {
-    ok("Hyperlane validator uniqueness", "3 unique validators");
-  } else {
-    blocked("Hyperlane validator uniqueness", "validators must be unique");
-  }
-
-  if (isAddress(env.HYPERLANE_RELAYER_ADDRESS)) {
-    ok("HYPERLANE_RELAYER_ADDRESS", "relayer address set");
-  } else {
-    blocked("HYPERLANE_RELAYER_ADDRESS", "relayer funding/monitoring address is required for public beta");
+    blocked("BRIDGE_CAPS_LAST_REVIEWED_AT", "must be reviewed within seven days");
   }
 }
 
 async function main() {
   const env = await readEnv();
+  const artifacts = Object.fromEntries(
+    await Promise.all(Object.keys(CHAINS).map(async (chainName) => [chainName, await readArtifact(chainName)])),
+  );
 
   if (isPrivateKey(env.DEPLOYER_PRIVATE_KEY)) ok("DEPLOYER_PRIVATE_KEY", "set");
-  else blocked("DEPLOYER_PRIVATE_KEY", "missing or invalid 32-byte private key");
-
-  if (env.MAINNET_BETA_ACK === MAINNET_ACK) ok("MAINNET_BETA_ACK", "explicit beta acknowledgement set");
+  else blocked("DEPLOYER_PRIVATE_KEY", "missing or invalid");
+  if (env.MAINNET_BETA_ACK === MAINNET_ACK) ok("MAINNET_BETA_ACK", "set");
   else blocked("MAINNET_BETA_ACK", `must equal ${MAINNET_ACK}`);
+  if (env.BRIDGE_SECURITY_APPLY_ACK === SECURITY_APPLY_ACK) ok("BRIDGE_SECURITY_APPLY_ACK", "set");
+  else blocked("BRIDGE_SECURITY_APPLY_ACK", `must equal ${SECURITY_APPLY_ACK}`);
 
-  requireUrl(env, "XPHERE_MAINNET_RPC_URL");
-  requireUrl(env, "ETHEREUM_MAINNET_RPC_URL");
-  if (env.SKIP_SEPOLIA_REHEARSAL === "true") {
-    warn("SEPOLIA_RPC_URL", "Sepolia rehearsal intentionally skipped by operator");
-  } else {
-    requireUrl(env, "SEPOLIA_RPC_URL");
-  }
-  requireUrl(env, "XPHERE_TESTNET_RPC_URL");
-
-  if (PUBLIC_XPHERE_RPCS.has(env.XPHERE_MAINNET_RPC_URL)) {
-    blocked("XPHERE_MAINNET_RPC_URL", "public RPC is acceptable for development, but public beta needs a dedicated endpoint");
-  }
-
-  validateSafe(env);
-  validateHyperlaneOperators(env);
-
-  requireWarpRouter(env, "VITE_ETHEREUM_USDC_WARP_ROUTER");
-  requireWarpRouter(env, "VITE_XPHERE_USDC_WARP_ROUTER");
-  requireWarpRouter(env, "VITE_ETHEREUM_USDT_WARP_ROUTER");
-  requireWarpRouter(env, "VITE_XPHERE_USDT_WARP_ROUTER");
-  requireWarpRouter(env, "VITE_ETHEREUM_NATIVE_WARP_ROUTER");
-  requireWarpRouter(env, "VITE_XPHERE_NATIVE_WARP_ROUTER");
-
-  if (isAddress(env.XPHERE_XEF_TOKEN || env.VITE_XPHERE_XEF)) {
-    if (env.VITE_XEF_OFFICIAL_VERIFIED === "true") {
-      ok("XEF official verification", "enabled by operator");
-    } else {
-      warn("XEF official verification", "XEF address is configured but default trust is not enabled");
+  for (const [chainName, chain] of Object.entries(CHAINS)) {
+    if (isUrl(env[chain.rpcEnv])) ok(chain.rpcEnv, "URL set");
+    else blocked(chain.rpcEnv, "missing or invalid URL");
+    if (chainName === "xphere" && PUBLIC_XPHERE_RPCS.has(env[chain.rpcEnv])) {
+      blocked(chain.rpcEnv, "public fallback RPC cannot be used for release");
     }
-  } else {
-    warn("XEF token", "not configured; XEF pool should stay hidden from mainnet defaults");
   }
 
-  await validateArtifact(
-    "deployments/xphere-mainnet.local.json",
-    20250217,
-    ["wXP", "factory", "router", "multicall3", "wXPxUSDCPair", "wXPxUSDTPair", "xUSDCxUSDTPair", "wXPxETHPair"],
-    ["xUSDC", "xUSDT", "xETH"],
-  );
-  await validateArtifact("deployments/ethereum-mainnet.local.json", 1);
+  const owners = Object.values(CHAINS).map((chain) => env[chain.ownerEnv]);
+  for (const [chainName, chain] of Object.entries(CHAINS)) {
+    if (isAddress(env[chain.ownerEnv])) ok(chain.ownerEnv, "address set");
+    else blocked(chain.ownerEnv, "missing or invalid Safe address");
+    if (isUrl(env[chain.rpcEnv]) && isAddress(env[chain.ownerEnv])) {
+      await requireContract(env[chain.rpcEnv], env[chain.ownerEnv], `${chainName} route owner Safe`);
+    }
+  }
+  if (owners.every(isAddress) && new Set(owners.map((owner) => owner.toLowerCase())).size === owners.length) {
+    ok("Route owner separation", "three unique Safe contracts");
+  } else {
+    blocked("Route owner separation", "Ethereum, Base, and Xphere owners must be unique");
+  }
 
-  const xphereArtifactPath = resolve(repoDir, "deployments/xphere-mainnet.local.json");
-  if (await exists(xphereArtifactPath)) {
-    try {
-      const artifact = JSON.parse(await readFile(xphereArtifactPath, "utf8"));
-      if (artifact.bridgeRoutes?.seededLiquidity?.xethEnabled === true) {
-        ok("WXP/xETH liquidity", "ETH-to-XP swap path seeded");
+  const validators = validatorsFromEnv(env);
+  if (validators.every(isAddress) && new Set(validators.map((value) => value.toLowerCase())).size === 3) {
+    ok("Hyperlane validators", "three unique validators");
+  } else {
+    blocked("Hyperlane validators", "three unique addresses required");
+  }
+  if (isAddress(env.HYPERLANE_RELAYER_ADDRESS)) ok("HYPERLANE_RELAYER_ADDRESS", "set");
+  else blocked("HYPERLANE_RELAYER_ADDRESS", "missing");
+
+  if (env.BRIDGE_CAPS_ACTIVE === "true") ok("BRIDGE_CAPS_ACTIVE", "enabled");
+  else blocked("BRIDGE_CAPS_ACTIVE", "must be true");
+  validateReviewDate(env);
+  if (env.BRIDGE_ETH_DAILY_CAP_REVIEWED === "true" && ethDailyCap(env)) {
+    ok("BRIDGE_ETH_DAILY_CAP_WEI", env.BRIDGE_ETH_DAILY_CAP_WEI);
+  } else {
+    blocked("BRIDGE_ETH_DAILY_CAP_WEI", "reviewed positive value divisible by 86400 required");
+  }
+
+  for (const [chainName, chain] of Object.entries(CHAINS)) {
+    const artifact = artifacts[chainName];
+    if (artifact.chainId === chain.chainId) ok(`${chain.artifact} chainId`, String(chain.chainId));
+    else blocked(`${chain.artifact} chainId`, `expected ${chain.chainId}, got ${artifact.chainId}`);
+    for (const routeKey of Object.keys(ROUTES)) {
+      const record = artifact.bridgeRoutes?.[routeKey];
+      if (routeComplete(artifact, routeKey, chainName, { requireSecurity: true })) {
+        ok(`${chainName} ${routeKey} route`, "recorded with final security");
       } else {
-        blocked("WXP/xETH liquidity", "seed WXP/xETH before advertising ETH-to-XP public UX");
+        blocked(`${chainName} ${routeKey} route`, "missing normalized route or final security record");
       }
-    } catch {
-      blocked("WXP/xETH liquidity", "could not inspect xphere-mainnet artifact");
+      if (isUrl(env[chain.rpcEnv]) && record) {
+        await requireContract(env[chain.rpcEnv], record.mailbox, `${chainName} ${routeKey} Mailbox`);
+        await requireContract(env[chain.rpcEnv], record.router, `${chainName} ${routeKey} router`);
+        await requireContract(env[chain.rpcEnv], record.interchainSecurityModule, `${chainName} ${routeKey} final ISM`);
+      }
+      if (record?.owner && env[chain.ownerEnv] && record.owner.toLowerCase() !== env[chain.ownerEnv].toLowerCase()) {
+        blocked(`${chainName} ${routeKey} owner`, "artifact owner differs from configured Safe");
+      }
     }
   }
 
-  const counts = checks.reduce(
-    (acc, check) => {
-      acc[check.status] += 1;
-      return acc;
-    },
-    { OK: 0, WARN: 0, BLOCKED: 0 },
-  );
-
-  console.log("Mainnet beta readiness:");
-  for (const check of checks) {
-    console.log(`[${check.status}] ${check.label}${check.detail ? ` - ${check.detail}` : ""}`);
+  const xphere = artifacts.xphere;
+  for (const key of ["wXP", "factory", "router", "multicall3"]) {
+    if (isAddress(xphere.contracts?.[key])) ok(`Xphere swap ${key}`, "recorded");
+    else blocked(`Xphere swap ${key}`, "missing");
   }
+  if (isAddress(xphere.tokens?.XEF) && env.VITE_XEF_OFFICIAL_VERIFIED === "true") {
+    ok("XEF official verification", "configured");
+  } else {
+    warn("XEF official verification", "swap remains usable, but verified flag should match the live XEF address");
+  }
+
+  if (env.VITE_BRIDGE_RELEASED === "true") ok("VITE_BRIDGE_RELEASED", "explicit live release flag set");
+  else blocked("VITE_BRIDGE_RELEASED", "must remain false until every release gate passes");
+
+  const counts = checks.reduce((acc, check) => ({ ...acc, [check.status]: acc[check.status] + 1 }), {
+    OK: 0,
+    WARN: 0,
+    BLOCKED: 0,
+  });
+  console.log("Mainnet bridge readiness:");
+  for (const check of checks) console.log(`[${check.status}] ${check.label}${check.detail ? ` - ${check.detail}` : ""}`);
   console.log(`Summary: ${counts.OK} OK, ${counts.WARN} warnings, ${counts.BLOCKED} blocked`);
-
-  if (counts.BLOCKED > 0) {
-    process.exitCode = 1;
-  }
+  if (counts.BLOCKED > 0) process.exitCode = 1;
 }
 
 main().catch((error) => {

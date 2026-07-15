@@ -3,14 +3,20 @@ packages:
   - "apps/*"
   - "ops/*"
 onlyBuiltDependencies:
+  - bigint-buffer
   - bufferutil
+  - core-js
   - esbuild
   - keccak
+  - protobufjs
   - secp256k1
   - utf-8-validate
 allowBuilds:
+  bigint-buffer: true
   bufferutil: true
+  core-js: true
   esbuild: true
   keccak: true
+  protobufjs: true
   secp256k1: true
   utf-8-validate: true

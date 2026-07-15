@@ -96,18 +96,6 @@ function checkAddress(env, key, requiredFor) {
   else missing(key, requiredFor);
 }
 
-function checkBootstrapAddress(env, key, requiredFor) {
-  if (isAddress(env[key])) {
-    ok(key, requiredFor);
-    return;
-  }
-  if (env.ALLOW_ETHEREUM_PROTOCOL_MULTISIG === "true") {
-    warn(key, "will be deployed by mainnet admin bootstrap");
-    return;
-  }
-  missing(key, requiredFor);
-}
-
 function checkUrl(env, key, requiredFor) {
   if (isUrl(env[key])) ok(key, requiredFor);
   else missing(key, requiredFor);
@@ -135,22 +123,33 @@ async function main() {
     checkUrl(env, "SEPOLIA_RPC_URL", "Sepolia bridge rehearsal");
   }
   checkUrl(env, "ETHEREUM_MAINNET_RPC_URL", "Ethereum mainnet bridge");
+  checkUrl(env, "BASE_MAINNET_RPC_URL", "Base mainnet bridge");
 
-  checkBootstrapAddress(env, "PROTOCOL_ADMIN_SAFE", "admin owner");
-  checkBootstrapAddress(env, "TREASURY_SAFE", "fee recipient");
-  if (env.ALLOW_ETHEREUM_PROTOCOL_MULTISIG === "true") {
-    warn("ALLOW_ETHEREUM_PROTOCOL_MULTISIG", "using repo ProtocolMultisig instead of an existing production Safe");
+  checkAddress(env, "ETHEREUM_PROTOCOL_ADMIN_SAFE", "Ethereum bridge route owner Safe");
+  checkAddress(env, "BASE_PROTOCOL_ADMIN_SAFE", "Base bridge route owner Safe");
+  checkAddress(env, "XPHERE_PROTOCOL_ADMIN_SAFE", "Xphere bridge route owner Safe");
+  if (
+    [env.ETHEREUM_PROTOCOL_ADMIN_SAFE, env.BASE_PROTOCOL_ADMIN_SAFE, env.XPHERE_PROTOCOL_ADMIN_SAFE].every(isAddress) &&
+    new Set(
+      [env.ETHEREUM_PROTOCOL_ADMIN_SAFE, env.BASE_PROTOCOL_ADMIN_SAFE, env.XPHERE_PROTOCOL_ADMIN_SAFE]
+        .map((value) => value.toLowerCase()),
+    ).size === 3
+  ) {
+    ok("BRIDGE_ROUTE_OWNERS", "three unique chain-specific Safe addresses");
+  } else {
+    missing("BRIDGE_ROUTE_OWNERS", "Ethereum, Base, and Xphere owners must be valid and unique");
   }
-  if (isAddress(env.XPHERE_PROTOCOL_ADMIN_SAFE)) ok("XPHERE_PROTOCOL_ADMIN_SAFE", "Xphere-only protocol admin multisig");
-  else warn("XPHERE_PROTOCOL_ADMIN_SAFE", "optional until Xphere admin multisig is deployed");
+  if (isAddress(env.TREASURY_SAFE)) ok("TREASURY_SAFE", "existing swap fee recipient");
+  else warn("TREASURY_SAFE", "only needed for future swap fee administration");
+  if (isAddress(env.PROTOCOL_ADMIN_SAFE)) warn("PROTOCOL_ADMIN_SAFE", "legacy fallback is ignored for bridge ownership");
+  else ok("PROTOCOL_ADMIN_SAFE", "legacy bridge owner fallback is unset");
+  if (env.ALLOW_ETHEREUM_PROTOCOL_MULTISIG === "true") {
+    missing("ALLOW_ETHEREUM_PROTOCOL_MULTISIG", "unsupported for bridge release; use existing chain-specific Safes");
+  } else {
+    ok("ALLOW_ETHEREUM_PROTOCOL_MULTISIG", "disabled");
+  }
   if (isAddress(env.XPHERE_TREASURY_SAFE)) ok("XPHERE_TREASURY_SAFE", "Xphere-only treasury multisig");
   else warn("XPHERE_TREASURY_SAFE", "optional until Xphere treasury multisig is deployed");
-  for (let index = 1; index <= 5; index += 1) {
-    checkAddress(env, `SAFE_OWNER_${index}`, "mainnet 3-of-5 Safe gate");
-  }
-  if (env.SAFE_THRESHOLD === "3") ok("SAFE_THRESHOLD", "mainnet 3-of-5 Safe gate");
-  else missing("SAFE_THRESHOLD", "must be 3");
-
   for (let index = 1; index <= 3; index += 1) {
     checkAddress(env, `HYPERLANE_VALIDATOR_${index}`, "2-of-3 Hyperlane ISM");
   }
@@ -165,12 +164,15 @@ async function main() {
   }
 
   for (const key of [
+    "VITE_BASE_USDC_WARP_ROUTER",
     "VITE_ETHEREUM_USDC_WARP_ROUTER",
     "VITE_XPHERE_USDC_WARP_ROUTER",
-    "VITE_ETHEREUM_USDT_WARP_ROUTER",
-    "VITE_XPHERE_USDT_WARP_ROUTER",
+    "VITE_BASE_NATIVE_WARP_ROUTER",
     "VITE_ETHEREUM_NATIVE_WARP_ROUTER",
     "VITE_XPHERE_NATIVE_WARP_ROUTER",
+    "VITE_BASE_MAILBOX",
+    "VITE_ETHEREUM_MAILBOX",
+    "VITE_XPHERE_MAILBOX",
   ]) {
     if (isAddress(env[key])) ok(key, "frontend bridge route");
     else warn(key, "needed before public bridge beta");
@@ -183,20 +185,24 @@ async function main() {
   if (env.FORCE_REDEPLOY_SWAP === "true") warn("FORCE_REDEPLOY_SWAP", "enabled; mainnet swap deploy will overwrite previous router/factory/WXP addresses");
   else ok("FORCE_REDEPLOY_SWAP", "disabled");
   if (isAddress(env.XPHERE_XUSDC_TOKEN || env.VITE_XPHERE_XUSDC)) {
-    ok("XPHERE_XUSDC_TOKEN", "mainnet bridged USDC address configured");
+    ok("XPHERE_XUSDC_TOKEN", "shared Xphere synthetic USDC address configured");
   } else {
-    warn("XPHERE_XUSDC_TOKEN", "needed before deploying a functional mainnet stable swap");
-  }
-  if (isAddress(env.XPHERE_XUSDT_TOKEN || env.VITE_XPHERE_XUSDT)) {
-    ok("XPHERE_XUSDT_TOKEN", "mainnet bridged USDT address configured");
-  } else {
-    warn("XPHERE_XUSDT_TOKEN", "needed before deploying a functional mainnet stable swap");
+    warn("XPHERE_XUSDC_TOKEN", "needed before the USDC bridge route can be released");
   }
   if (isAddress(env.XPHERE_XETH_TOKEN || env.VITE_XPHERE_XETH)) {
     ok("XPHERE_XETH_TOKEN", "mainnet bridged ETH address configured");
   } else {
     warn("XPHERE_XETH_TOKEN", "needed before ETH can land on Xphere and swap into XP");
   }
+  if (env.BRIDGE_ETH_DAILY_CAP_REVIEWED === "true" && /^\d+$/.test(env.BRIDGE_ETH_DAILY_CAP_WEI || "")) {
+    const cap = BigInt(env.BRIDGE_ETH_DAILY_CAP_WEI);
+    if (cap > 0n && cap % 86_400n === 0n) ok("BRIDGE_ETH_DAILY_CAP_WEI", "reviewed and divisible by 86400");
+    else missing("BRIDGE_ETH_DAILY_CAP_WEI", "must be positive and divisible by 86400");
+  } else {
+    missing("BRIDGE_ETH_DAILY_CAP_WEI", "set a reviewed cap and BRIDGE_ETH_DAILY_CAP_REVIEWED=true");
+  }
+  if (env.VITE_BRIDGE_RELEASED === "true") warn("VITE_BRIDGE_RELEASED", "live release flag set; run full readiness before publishing");
+  else ok("VITE_BRIDGE_RELEASED", "false or unset; bridge remains in preview mode");
   if (env.VITE_XEF_OFFICIAL_VERIFIED === "true" && !isAddress(env.XPHERE_XEF_TOKEN)) {
     missing("VITE_XEF_OFFICIAL_VERIFIED", "cannot be true without XPHERE_XEF_TOKEN");
   } else if (env.VITE_XEF_OFFICIAL_VERIFIED === "true") {

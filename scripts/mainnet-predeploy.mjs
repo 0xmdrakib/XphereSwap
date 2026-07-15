@@ -29,9 +29,11 @@ async function readEnv() {
 }
 
 function buildChecks(env) {
-  const adminBootstrapPending =
-    env.ALLOW_ETHEREUM_PROTOCOL_MULTISIG === "true" &&
-    (!isAddress(env.PROTOCOL_ADMIN_SAFE) || !isAddress(env.TREASURY_SAFE));
+  const bridgeOwnersMissing = [
+    env.ETHEREUM_PROTOCOL_ADMIN_SAFE,
+    env.BASE_PROTOCOL_ADMIN_SAFE,
+    env.XPHERE_PROTOCOL_ADMIN_SAFE,
+  ].some((value) => !isAddress(value));
 
   return [
   {
@@ -67,7 +69,7 @@ function buildChecks(env) {
   {
     label: "Hyperlane Warp Route render",
     args: ["bridge:render-routes"],
-    required: !adminBootstrapPending,
+    required: !bridgeOwnersMissing,
   },
   {
     label: "Bridge config/artifact validation",

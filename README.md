@@ -48,7 +48,7 @@ Explorer: [Tamsa Xphere Explorer](https://xp.tamsa.io)
 - Contracts: Solidity, Hardhat, TypeScript
 - AMM: Uniswap V2-style factory, router, and pair flow
 - Bridge preparation: Hyperlane Warp Route configs
-- Tests: Hardhat, Playwright
+- Tests: Hardhat, Vitest, Playwright
 
 ## Project Structure
 
@@ -136,9 +136,12 @@ Bridge code and Hyperlane configuration are included for the next phase. Mainnet
 
 Planned route direction:
 
-- Base or Ethereum to Xphere using Hyperlane Warp Routes
-- ETH to xETH on Xphere, then xETH/WXP liquidity for XP access
-- USDC/USDT synthetic routes after operator, liquidity, and safety review
+- Ethereum or Base to Xphere using shared Hyperlane Warp Routes
+- Native ETH to one shared xETH token on Xphere
+- Official Ethereum/Base USDC to one shared xUSDC token on Xphere
+- Xphere withdrawals back to Ethereum or Base after collateral and safety review
+
+Base-to-Ethereum routing and production USDT bridging are not included. The Bridge screen remains visibly `Not live` with transaction actions disabled.
 
 ## Safety Notes
 

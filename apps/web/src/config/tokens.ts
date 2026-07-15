@@ -1,6 +1,6 @@
 import { Address } from "viem";
 import { deployments } from "./deployments";
-import { isLocalBridge, swapChain } from "./chains";
+import { swapChain } from "./chains";
 
 export type TokenConfig = {
   symbol: string;
@@ -49,14 +49,6 @@ export const xphereSwapTokens: TokenConfig[] = [
     verified: true,
   },
   {
-    symbol: "xUSDT",
-    name: "Xphere Bridged USDT",
-    chainId: swapChain.id,
-    decimals: 6,
-    address: deployments.xphere.xusdt,
-    verified: true,
-  },
-  {
     symbol: "XEF",
     name: "XEFFY",
     chainId: swapChain.id,
@@ -65,42 +57,3 @@ export const xphereSwapTokens: TokenConfig[] = [
     verified: Boolean(deployments.xphere.xef && import.meta.env.VITE_XEF_OFFICIAL_VERIFIED !== "false"),
   },
 ].filter((token) => Boolean(token.address));
-
-export const bridgeAssets = [
-  {
-    symbol: isLocalBridge ? "ETH/XP" : "ETH",
-    sourceSymbol: "ETH",
-    destinationSymbol: isLocalBridge ? "XP" : "xETH",
-    decimals: 18,
-    ethereumNative: true,
-    xphereNative: isLocalBridge,
-    ethereumToken: undefined,
-    xphereToken: isLocalBridge ? undefined : deployments.xphere.xeth,
-    ethereumRouter: deployments.ethereum.nativeWarpRouter,
-    xphereRouter: deployments.xphere.nativeWarpRouter,
-  },
-  {
-    symbol: "USDC",
-    sourceSymbol: "USDC",
-    destinationSymbol: "xUSDC",
-    decimals: 6,
-    ethereumNative: false,
-    xphereNative: false,
-    ethereumToken: deployments.ethereum.usdc,
-    xphereToken: deployments.xphere.xusdc,
-    ethereumRouter: deployments.ethereum.usdcWarpRouter,
-    xphereRouter: deployments.xphere.usdcWarpRouter,
-  },
-  {
-    symbol: "USDT",
-    sourceSymbol: "USDT",
-    destinationSymbol: "xUSDT",
-    decimals: 6,
-    ethereumNative: false,
-    xphereNative: false,
-    ethereumToken: deployments.ethereum.usdt,
-    xphereToken: deployments.xphere.xusdt,
-    ethereumRouter: deployments.ethereum.usdtWarpRouter,
-    xphereRouter: deployments.xphere.usdtWarpRouter,
-  },
-] as const;

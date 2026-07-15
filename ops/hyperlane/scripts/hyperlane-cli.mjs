@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,7 +9,10 @@ const repoDir = resolve(scriptDir, "../../..");
 const repoRegistryDir = resolve(scriptDir, "../.registry");
 const windowsRegistryDir = "C:\\tmp\\xphere-hyperlane-registry";
 const registryDir = process.platform === "win32" ? windowsRegistryDir : repoRegistryDir;
-const npmCacheDir = "C:\\tmp\\npm-cache";
+const cliPackageDir = resolve(repoDir, "ops/hyperlane/node_modules/@hyperlane-xyz/cli");
+const windowsCliDir = "C:\\tmp\\xphereswap-hyperlane-cli\\36.0.0";
+const cliRuntimeDir = process.platform === "win32" ? windowsCliDir : cliPackageDir;
+const cliEntry = resolve(cliRuntimeDir, "bundle/index.js");
 
 async function readEnv() {
   const env = { ...process.env };
@@ -27,21 +30,17 @@ async function readEnv() {
 }
 
 function commandFor(args) {
-  const fullArgs = [
-    "npx",
-    "-y",
-    "@hyperlane-xyz/cli",
-    ...args,
-    "--registry",
-    "https://github.com/hyperlane-xyz/hyperlane-registry",
-    "--registry",
-    registryDir,
-  ];
-
-  if (process.platform === "win32") {
-    return { command: "cmd.exe", args: ["/d", "/s", "/c", ...fullArgs] };
-  }
-  return { command: "npx", args: fullArgs.slice(1) };
+  return {
+    command: process.execPath,
+    args: [
+      cliEntry,
+      ...args,
+      "--registry",
+      "https://github.com/hyperlane-xyz/hyperlane-registry",
+      "--registry",
+      registryDir,
+    ],
+  };
 }
 
 async function main() {
@@ -54,8 +53,17 @@ async function main() {
     return;
   }
 
+  const installedEntry = resolve(cliPackageDir, "bundle/index.js");
+  if (!existsSync(installedEntry)) {
+    throw new Error("Pinned Hyperlane CLI is not installed; run pnpm install --frozen-lockfile with Node 22");
+  }
+  if (process.platform === "win32" && !existsSync(cliEntry)) {
+    await mkdir(cliRuntimeDir, { recursive: true });
+    await cp(resolve(cliPackageDir, "bundle"), resolve(cliRuntimeDir, "bundle"), { recursive: true });
+    await cp(resolve(cliPackageDir, "package.json"), resolve(cliRuntimeDir, "package.json"));
+  }
+
   await mkdir(resolve(scriptDir, "../generated"), { recursive: true });
-  if (process.platform === "win32") await mkdir(npmCacheDir, { recursive: true });
 
   const env = await readEnv();
   const childEnv = {
@@ -65,9 +73,6 @@ async function main() {
   const signerKey = env.HYP_KEY || env.DEPLOYER_PRIVATE_KEY;
   if (signerKey) childEnv.HYP_KEY = signerKey;
   else delete childEnv.HYP_KEY;
-  if (process.platform === "win32") {
-    childEnv.npm_config_cache = env.npm_config_cache || npmCacheDir;
-  }
 
   const command = commandFor(args);
   const output = [];

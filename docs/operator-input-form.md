@@ -1,104 +1,102 @@
 # Operator Input Form
 
-Fill these values in `.env` when you are ready for testnet/mainnet. Do not commit `.env`.
+Fill these values only in the ignored local `.env`. Never commit private keys, authenticated RPC URLs, or generated operator files.
 
-## Minimum For Xphere Testnet
+## Existing Xphere Swap
 
-```bash
-DEPLOYER_PRIVATE_KEY=
-XPHERE_TESTNET_RPC_URL=https://testnet.x-phere.com
-```
+The live XP/WXP and XEF swap deployment is already recorded. Bridge work must not redeploy or change those contracts.
 
-The deployer must hold enough Xphere testnet gas token for contract deployment and liquidity seeding.
-
-## Required For Mainnet Swap
+Useful read-only inputs:
 
 ```bash
-DEPLOYER_PRIVATE_KEY=
 XPHERE_MAINNET_RPC_URL=
-PROTOCOL_ADMIN_SAFE=
-TREASURY_SAFE=
-XPHERE_XUSDC_TOKEN=
-XPHERE_XUSDT_TOKEN=
-XPHERE_XETH_TOKEN=
-SAFE_OWNER_1=
-SAFE_OWNER_2=
-SAFE_OWNER_3=
-SAFE_OWNER_4=
-SAFE_OWNER_5=
-SAFE_THRESHOLD=3
+XPHERE_XEF_TOKEN=0x80252C2D06bbd85699c555fc3633D5B8eE67C9AD
+VITE_XEF_OFFICIAL_VERIFIED=true
+```
+
+## Future Bridge Deployment
+
+The bridge is not live. Configure these only after team review:
+
+```bash
+DEPLOYER_PRIVATE_KEY=
 MAINNET_BETA_ACK=I_UNDERSTAND_MAINNET_BETA
-```
+BRIDGE_SECURITY_APPLY_ACK=I_UNDERSTAND_BRIDGE_SECURITY_APPLY
 
-The deployer needs XP for gas and any initial WXP liquidity. `XPHERE_MAINNET_RPC_URL` must be a dedicated endpoint for public beta; the public RPCs are dev-probe only. The Safe owners must be five unique non-zero EVM addresses.
-
-## Mainnet Liquidity
-
-```bash
-SEED_MAINNET_LIQUIDITY=true
-LIQUIDITY_MAINNET_ACK=I_UNDERSTAND_LIQUIDITY_SEEDING
-LIQUIDITY_WXP_PER_STABLE_POOL=
-LIQUIDITY_STABLE_PER_WXP_POOL=
-LIQUIDITY_STABLE_STABLE_AMOUNT=
-SEED_XETH_LIQUIDITY=true
-LIQUIDITY_WXP_FOR_XETH_POOL=
-LIQUIDITY_XETH_FOR_WXP_POOL=
-```
-
-Set these only after the deployer wallet holds the tokens needed for the initial pools.
-
-## Optional XEF
-
-```bash
-XPHERE_XEF_TOKEN=
-VITE_XEF_OFFICIAL_VERIFIED=false
-SEED_XEF_LIQUIDITY=false
-LIQUIDITY_WXP_FOR_XEF_POOL=
-LIQUIDITY_XEF_FOR_WXP_POOL=
-```
-
-Only set `VITE_XEF_OFFICIAL_VERIFIED=true` after the XEF address is confirmed from official Xphere/XEFFY channels or an explorer-verified official contract.
-
-## Required For Ethereum/Xphere Bridge
-
-```bash
+XPHERE_MAINNET_RPC_URL=
 ETHEREUM_MAINNET_RPC_URL=
+BASE_MAINNET_RPC_URL=
 SEPOLIA_RPC_URL=
-MIN_XPHERE_DEPLOYER_XP=1
-MIN_ETHEREUM_DEPLOYER_ETH=0.1
-MIN_SEPOLIA_DEPLOYER_ETH=0.05
+
+ETHEREUM_PROTOCOL_ADMIN_SAFE=
+BASE_PROTOCOL_ADMIN_SAFE=
+XPHERE_PROTOCOL_ADMIN_SAFE=
+
 HYPERLANE_VALIDATOR_1=
 HYPERLANE_VALIDATOR_2=
 HYPERLANE_VALIDATOR_3=
 HYPERLANE_RELAYER_ADDRESS=
+
+ETHEREUM_MAILBOX=
+BASE_MAILBOX=
+XPHERE_MAILBOX=
+
 BRIDGE_CAPS_ACTIVE=true
 BRIDGE_CAPS_LAST_REVIEWED_AT=
-VITE_ETHEREUM_USDC_WARP_ROUTER=
-VITE_XPHERE_USDC_WARP_ROUTER=
-VITE_ETHEREUM_USDT_WARP_ROUTER=
-VITE_XPHERE_USDT_WARP_ROUTER=
-VITE_ETHEREUM_NATIVE_WARP_ROUTER=
-VITE_XPHERE_NATIVE_WARP_ROUTER=
+BRIDGE_ETH_DAILY_CAP_WEI=
+BRIDGE_ETH_DAILY_CAP_REVIEWED=true
+BRIDGE_ETH_USD_PRICE_FEED=
 ```
 
-Validators should be three unique addresses controlled on separate hosts. The public beta target is 2-of-3 validator threshold with one relayer, route caps, and emergency pause tested before opening to users. Mainnet ETH bridges to `xETH` on Xphere first; XP output is achieved by swapping `xETH` through the AMM.
+The three owner addresses must be unique deployed Safe contracts. The legacy `PROTOCOL_ADMIN_SAFE` value is not accepted as a bridge owner fallback.
 
-## Commands After Filling Inputs
+## Route Outputs
+
+After phase-one deployment and phase-two security application, record:
 
 ```bash
-pnpm mainnet:inputs
-pnpm mainnet:set PROTOCOL_ADMIN_SAFE=0x... TREASURY_SAFE=0x...
-pnpm mainnet:set --file docs/operator-values.local.json
-pnpm env:doctor:strict
-pnpm mainnet:funding
-pnpm mainnet:predeploy
-pnpm mainnet:orchestrate
-pnpm mainnet:orchestrate:live
-pnpm bridge:caps:release
-pnpm mainnet:predeploy:release
-pnpm mainnet:orchestrate:release
-pnpm deploy:xphere-testnet
-pnpm deploy:xphere-mainnet
+XPHERE_XETH_TOKEN=
+XPHERE_XUSDC_TOKEN=
+
+VITE_ETHEREUM_NATIVE_WARP_ROUTER=
+VITE_BASE_NATIVE_WARP_ROUTER=
+VITE_XPHERE_NATIVE_WARP_ROUTER=
+
+VITE_ETHEREUM_USDC_WARP_ROUTER=
+VITE_BASE_USDC_WARP_ROUTER=
+VITE_XPHERE_USDC_WARP_ROUTER=
+
+VITE_ETHEREUM_MAILBOX=
+VITE_BASE_MAILBOX=
+VITE_XPHERE_MAILBOX=
+
+VITE_BRIDGE_RELEASED=false
+```
+
+Keep `VITE_BRIDGE_RELEASED=false` until all eight low-value delivery tests, collateral checks, monitoring checks, and pause drills pass.
+
+## Funding Thresholds
+
+```bash
+MIN_XPHERE_DEPLOYER_XP=1
+MIN_ETHEREUM_DEPLOYER_ETH=0.1
+MIN_BASE_DEPLOYER_ETH=0.05
+MIN_SEPOLIA_DEPLOYER_ETH=0.05
+```
+
+Review and increase these thresholds based on live gas estimates before deployment.
+
+## Commands
+
+```bash
+pnpm node:run22 -- pnpm mainnet:inputs
+pnpm node:run22 -- pnpm mainnet:orchestrate
+
+# Future live work only after approval and funding:
+pnpm mainnet:orchestrate:live:node22
 pnpm bridge:readiness
+pnpm bridge:caps:release
 pnpm release:mainnet-beta
 ```
+
+The release command verifies and builds the frontend; it does not send an on-chain transaction or publish Vercel automatically.

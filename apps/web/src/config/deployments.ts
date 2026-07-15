@@ -17,13 +17,12 @@ const xphereMainnetDeployment = {
   factory: optionalAddress(import.meta.env.VITE_XPHERE_FACTORY || publicXphereMainnet.factory),
   wxp: optionalAddress(import.meta.env.VITE_XPHERE_WXP || publicXphereMainnet.wxp),
   xusdc: optionalAddress(import.meta.env.VITE_XPHERE_XUSDC),
-  xusdt: optionalAddress(import.meta.env.VITE_XPHERE_XUSDT),
   xeth: optionalAddress(import.meta.env.VITE_XPHERE_XETH),
   xef: optionalAddress(import.meta.env.VITE_XPHERE_XEF || publicXphereMainnet.xef),
   localFaucet: undefined,
   usdcWarpRouter: optionalAddress(import.meta.env.VITE_XPHERE_USDC_WARP_ROUTER),
-  usdtWarpRouter: optionalAddress(import.meta.env.VITE_XPHERE_USDT_WARP_ROUTER),
   nativeWarpRouter: optionalAddress(import.meta.env.VITE_XPHERE_NATIVE_WARP_ROUTER),
+  mailbox: optionalAddress(import.meta.env.VITE_XPHERE_MAILBOX),
 };
 
 const localDeployment = {
@@ -38,6 +37,7 @@ const localDeployment = {
   usdcWarpRouter: optionalAddress(import.meta.env.VITE_LOCAL_XPHERE_USDC_BRIDGE_ROUTER),
   usdtWarpRouter: optionalAddress(import.meta.env.VITE_LOCAL_XPHERE_USDT_BRIDGE_ROUTER),
   nativeWarpRouter: optionalAddress(import.meta.env.VITE_LOCAL_XPHERE_NATIVE_BRIDGE_ROUTER),
+  mailbox: undefined,
 };
 
 const activeSwapDeployment =
@@ -45,11 +45,10 @@ const activeSwapDeployment =
 
 const ethereumMainnetDeployment = {
   usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as Address,
-  usdt: "0xdAC17F958D2ee523a2206206994597C13D831ec7" as Address,
   localFaucet: undefined,
   usdcWarpRouter: optionalAddress(import.meta.env.VITE_ETHEREUM_USDC_WARP_ROUTER),
-  usdtWarpRouter: optionalAddress(import.meta.env.VITE_ETHEREUM_USDT_WARP_ROUTER),
   nativeWarpRouter: optionalAddress(import.meta.env.VITE_ETHEREUM_NATIVE_WARP_ROUTER),
+  mailbox: optionalAddress(import.meta.env.VITE_ETHEREUM_MAILBOX),
 };
 
 const localEthereumDeployment = {
@@ -59,10 +58,19 @@ const localEthereumDeployment = {
   usdcWarpRouter: optionalAddress(import.meta.env.VITE_LOCAL_ETHEREUM_USDC_BRIDGE_ROUTER),
   usdtWarpRouter: optionalAddress(import.meta.env.VITE_LOCAL_ETHEREUM_USDT_BRIDGE_ROUTER),
   nativeWarpRouter: optionalAddress(import.meta.env.VITE_LOCAL_ETHEREUM_NATIVE_BRIDGE_ROUTER),
+  mailbox: undefined,
 };
 
 const activeEthereumDeployment =
   import.meta.env.VITE_BRIDGE_MODE === "local" ? localEthereumDeployment : ethereumMainnetDeployment;
+
+const baseMainnetDeployment = {
+  usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address,
+  localFaucet: undefined,
+  usdcWarpRouter: optionalAddress(import.meta.env.VITE_BASE_USDC_WARP_ROUTER),
+  nativeWarpRouter: optionalAddress(import.meta.env.VITE_BASE_NATIVE_WARP_ROUTER),
+  mailbox: optionalAddress(import.meta.env.VITE_BASE_MAILBOX),
+};
 
 export const deployments = {
   xphere: activeSwapDeployment,
@@ -71,6 +79,7 @@ export const deployments = {
   ethereum: activeEthereumDeployment,
   ethereumMainnet: ethereumMainnetDeployment,
   localEthereum: localEthereumDeployment,
+  base: baseMainnetDeployment,
 };
 
 export const configuredForSwap = Boolean(

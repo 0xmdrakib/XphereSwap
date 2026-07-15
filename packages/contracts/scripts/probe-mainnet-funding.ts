@@ -40,6 +40,15 @@ const checks: FundingCheck[] = [
     required: !swapMvpMode,
   },
   {
+    name: "Base mainnet",
+    rpcEnv: "BASE_MAINNET_RPC_URL",
+    expectedChainId: 8453,
+    nativeSymbol: "ETH",
+    minEnv: "MIN_BASE_DEPLOYER_ETH",
+    defaultMin: "0.05",
+    required: !swapMvpMode,
+  },
+  {
     name: "Sepolia",
     rpcEnv: "SEPOLIA_RPC_URL",
     expectedChainId: 11155111,

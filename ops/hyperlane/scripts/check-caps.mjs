@@ -1,85 +1,37 @@
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import YAML from "yaml";
+import {
+  OPS_DIR,
+  REPO_DIR,
+  ROUTES,
+  TOTAL_TVL_CAP_USD,
+  USDC_DAILY_CAP_UNITS,
+  aggregateTvlUsd,
+  ethDailyCap,
+  isAddress,
+  isUrl,
+  readEnv,
+  readJson,
+} from "./bridge-config.mjs";
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const opsDir = resolve(scriptDir, "..");
-const repoDir = resolve(opsDir, "..", "..");
 const releaseMode = process.argv.includes("--release");
-
 const BALANCE_OF_SELECTOR = "0x70a08231";
 const DECIMALS_SELECTOR = "0x313ce567";
 const LATEST_ROUND_DATA_SELECTOR = "0xfeaf968c";
 const USD_SCALE = 1_000_000n;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
+const DAY_MS = 86_400_000;
 const checks = [];
 
 function add(status, label, detail) {
   checks.push({ status, label, detail });
 }
-
-function ok(label, detail = "") {
-  add("OK", label, detail);
-}
-
-function warn(label, detail = "") {
-  add("WARN", label, detail);
-}
-
-function blocked(label, detail = "") {
-  add("BLOCKED", label, detail);
-}
-
-function isAddress(value) {
-  const normalized = String(value || "").toLowerCase();
-  return /^0x[a-fA-F0-9]{40}$/.test(normalized) &&
-    normalized !== "0x0000000000000000000000000000000000000000";
-}
-
-function isUrl(value) {
-  try {
-    const url = new URL(String(value || ""));
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-async function readEnv() {
-  const env = { ...process.env };
-  const envPath = resolve(repoDir, ".env");
-  if (!existsSync(envPath)) return env;
-  const raw = await readFile(envPath, "utf8");
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match || env[match[1]] !== undefined) continue;
-    env[match[1]] = match[2].replace(/^["']|["']$/g, "");
-  }
-  return env;
-}
-
-async function readJson(relativePath) {
-  const path = resolve(repoDir, relativePath);
-  if (!existsSync(path)) return undefined;
-  return JSON.parse(await readFile(path, "utf8"));
-}
+const ok = (label, detail = "") => add("OK", label, detail);
+const warn = (label, detail = "") => add("WARN", label, detail);
+const blocked = (label, detail = "") => add("BLOCKED", label, detail);
 
 function padAddress(address) {
   return String(address).toLowerCase().replace(/^0x/, "").padStart(64, "0");
-}
-
-function word(hex, index) {
-  const clean = hex.replace(/^0x/, "");
-  return `0x${clean.slice(index * 64, (index + 1) * 64)}`;
-}
-
-function uint(hex) {
-  return BigInt(hex);
 }
 
 async function rpc(rpcUrl, method, params) {
@@ -89,7 +41,7 @@ async function rpc(rpcUrl, method, params) {
     body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
   });
   const payload = await response.json();
-  if (!response.ok || payload.error) throw new Error(payload.error?.message || `RPC ${method} failed`);
+  if (!response.ok || payload.error) throw new Error(payload.error?.message || `${method} failed`);
   return payload.result;
 }
 
@@ -98,19 +50,22 @@ async function call(rpcUrl, to, data) {
 }
 
 async function erc20Balance(rpcUrl, token, holder) {
-  const data = `${BALANCE_OF_SELECTOR}${padAddress(holder)}`;
-  return uint(await call(rpcUrl, token, data));
+  return BigInt(await call(rpcUrl, token, `${BALANCE_OF_SELECTOR}${padAddress(holder)}`));
 }
 
 async function nativeBalance(rpcUrl, holder) {
-  return uint(await rpc(rpcUrl, "eth_getBalance", [holder, "latest"]));
+  return BigInt(await rpc(rpcUrl, "eth_getBalance", [holder, "latest"]));
+}
+
+function word(hex, index) {
+  const clean = hex.replace(/^0x/, "");
+  return `0x${clean.slice(index * 64, (index + 1) * 64)}`;
 }
 
 async function chainlinkEthUsd(rpcUrl, feed) {
-  const decimals = Number(uint(await call(rpcUrl, feed, DECIMALS_SELECTOR)));
+  const decimals = Number(BigInt(await call(rpcUrl, feed, DECIMALS_SELECTOR)));
   const latest = await call(rpcUrl, feed, LATEST_ROUND_DATA_SELECTOR);
-  const answer = uint(word(latest, 1));
-  return (answer * USD_SCALE) / 10n ** BigInt(decimals);
+  return (BigInt(word(latest, 1)) * USD_SCALE) / 10n ** BigInt(decimals);
 }
 
 function parseUsd(value) {
@@ -118,139 +73,109 @@ function parseUsd(value) {
   return BigInt(whole || "0") * USD_SCALE + BigInt(fraction.padEnd(6, "0").slice(0, 6));
 }
 
-function usdForBalance(balance, decimals, priceUsdScaled) {
-  return (balance * priceUsdScaled) / 10n ** BigInt(decimals);
+function usdForBalance(balance, decimals, price) {
+  return (balance * price) / 10n ** BigInt(decimals);
 }
 
-function formatUsd(scaled) {
-  const sign = scaled < 0n ? "-" : "";
-  const value = scaled < 0n ? -scaled : scaled;
+function formatUsd(value) {
   const whole = value / USD_SCALE;
-  const fraction = value % USD_SCALE;
-  return `${sign}$${whole}.${fraction.toString().padStart(6, "0").slice(0, 2)}`;
+  const fraction = (value % USD_SCALE).toString().padStart(6, "0").slice(0, 2);
+  return `$${whole}.${fraction}`;
 }
 
-function validateReviewDate(env) {
+function validateReview(env) {
   if (!releaseMode) return;
-  if (env.BRIDGE_CAPS_ACTIVE !== "true") {
-    blocked("BRIDGE_CAPS_ACTIVE", "must be true before public beta release");
+  if (env.BRIDGE_CAPS_ACTIVE === "true") ok("BRIDGE_CAPS_ACTIVE", "acknowledged");
+  else blocked("BRIDGE_CAPS_ACTIVE", "must be true for release");
+  const reviewed = new Date(env.BRIDGE_CAPS_LAST_REVIEWED_AT || "");
+  const age = Date.now() - reviewed.getTime();
+  if (!Number.isNaN(reviewed.getTime()) && age >= 0 && age <= 7 * DAY_MS) {
+    ok("BRIDGE_CAPS_LAST_REVIEWED_AT", reviewed.toISOString());
   } else {
-    ok("BRIDGE_CAPS_ACTIVE", "operator cap controls acknowledged");
+    blocked("BRIDGE_CAPS_LAST_REVIEWED_AT", "review must be within seven days");
   }
-
-  const raw = env.BRIDGE_CAPS_LAST_REVIEWED_AT;
-  if (!raw) {
-    blocked("BRIDGE_CAPS_LAST_REVIEWED_AT", "set to an ISO timestamp after the latest cap drill");
-    return;
-  }
-
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) {
-    blocked("BRIDGE_CAPS_LAST_REVIEWED_AT", "invalid timestamp");
-    return;
-  }
-
-  const age = Date.now() - date.getTime();
-  if (age < 0 || age > 7 * DAY_MS) {
-    blocked("BRIDGE_CAPS_LAST_REVIEWED_AT", "cap review must be within the last 7 days");
+  if (env.BRIDGE_ETH_DAILY_CAP_REVIEWED === "true" && ethDailyCap(env)) {
+    ok("BRIDGE_ETH_DAILY_CAP_WEI", env.BRIDGE_ETH_DAILY_CAP_WEI);
   } else {
-    ok("BRIDGE_CAPS_LAST_REVIEWED_AT", date.toISOString());
+    blocked("BRIDGE_ETH_DAILY_CAP_WEI", "reviewed positive value divisible by 86400 required");
   }
 }
 
-async function validateTemplates(config) {
-  for (const [asset, route] of Object.entries(config.routes)) {
-    const templatePath = resolve(opsDir, "warp-routes", route.template);
-    const parsed = YAML.parse(await readFile(templatePath, "utf8"));
-    if (parsed.options?.dailyLimitUsd === route.dailyLimitUsd) {
-      ok(`${asset} daily cap template`, `$${route.dailyLimitUsd}`);
-    } else {
-      blocked(`${asset} daily cap template`, `expected ${route.dailyLimitUsd}, got ${parsed.options?.dailyLimitUsd}`);
-    }
-    if (parsed.options?.totalTvlLimitUsd === route.totalTvlLimitUsd) {
-      ok(`${asset} TVL cap template`, `$${route.totalTvlLimitUsd}`);
-    } else {
-      blocked(`${asset} TVL cap template`, `expected ${route.totalTvlLimitUsd}, got ${parsed.options?.totalTvlLimitUsd}`);
-    }
-  }
+async function validateTemplates(config, env) {
+  const usdc = YAML.parse(await readFile(resolve(OPS_DIR, "warp-routes", ROUTES.usdc.template), "utf8"));
+  const eth = YAML.parse(await readFile(resolve(OPS_DIR, "warp-routes", ROUTES.eth.template), "utf8"));
+  if (BigInt(usdc.options?.finalSecurity?.rateLimitCapacity || 0) === USDC_DAILY_CAP_UNITS) {
+    ok("USDC on-chain daily capacity", `${USDC_DAILY_CAP_UNITS} base units`);
+  } else blocked("USDC on-chain daily capacity", "template mismatch");
+  if (eth.options?.finalSecurity?.rateLimitEnv === "BRIDGE_ETH_DAILY_CAP_WEI") ok("ETH rate limit input", "env-driven");
+  else blocked("ETH rate limit input", "template mismatch");
+  if (config.aggregateTvlLimitUsd === TOTAL_TVL_CAP_USD) ok("Aggregate TVL cap", `$${TOTAL_TVL_CAP_USD}`);
+  else blocked("Aggregate TVL cap", "config mismatch");
+  if (!releaseMode && !ethDailyCap(env)) warn("ETH daily capacity", "not set yet; release remains blocked");
 }
 
 async function validateLiveTvl(config, env) {
-  const ethereum = await readJson("deployments/ethereum-mainnet.local.json");
-  if (!ethereum) {
-    const message = "mainnet route artifact not present yet";
-    if (releaseMode) blocked("Bridge TVL", message);
-    else warn("Bridge TVL", message);
+  const artifacts = {};
+  for (const [chainName, origin] of Object.entries(config.origins)) {
+    artifacts[chainName] = await readJson(origin.artifact);
+    if (!artifacts[chainName]) {
+      (releaseMode ? blocked : warn)(`${chainName} collateral`, "route artifact not recorded yet");
+    }
+    if (!isUrl(env[origin.rpcEnv])) {
+      (releaseMode ? blocked : warn)(`${chainName} RPC`, `${origin.rpcEnv} missing`);
+    }
+  }
+  if (Object.values(artifacts).some((artifact) => !artifact) ||
+      Object.values(config.origins).some((origin) => !isUrl(env[origin.rpcEnv]))) return;
+
+  const feed = env.BRIDGE_ETH_USD_PRICE_FEED || config.ethUsdFeed;
+  if (!isAddress(feed)) {
+    blocked("ETH/USD feed", "missing");
     return;
   }
+  const ethUsd = await chainlinkEthUsd(env.ETHEREUM_MAINNET_RPC_URL, feed);
+  ok("ETH/USD feed", formatUsd(ethUsd));
 
-  if (!isUrl(env.ETHEREUM_MAINNET_RPC_URL)) {
-    const message = "ETHEREUM_MAINNET_RPC_URL is required for live TVL checks";
-    if (releaseMode) blocked("Bridge TVL RPC", message);
-    else warn("Bridge TVL RPC", message);
-    return;
-  }
-
-  let ethUsd = 0n;
-  if (Object.values(config.routes).some((route) => route.priceSource === "chainlink-eth-usd")) {
-    const feed = env.BRIDGE_ETH_USD_PRICE_FEED || config.ethUsdFeed;
-    if (!isAddress(feed)) {
-      blocked("ETH/USD feed", "missing Chainlink feed address");
-      return;
+  const collateralUsd = {};
+  for (const [routeKey, route] of Object.entries(config.routes)) {
+    collateralUsd[routeKey] = {};
+    for (const [chainName, origin] of Object.entries(config.origins)) {
+      const artifact = artifacts[chainName];
+      const router = artifact.bridgeRoutes?.[routeKey]?.router;
+      if (!isAddress(router)) {
+        (releaseMode ? blocked : warn)(`${chainName} ${routeKey} TVL`, "router not recorded");
+        continue;
+      }
+      const rpcUrl = env[origin.rpcEnv];
+      const balance = route.tokens[chainName] === "ETH"
+        ? await nativeBalance(rpcUrl, router)
+        : await erc20Balance(rpcUrl, route.tokens[chainName], router);
+      const price = route.priceSource === "chainlink-eth-usd" ? ethUsd : parseUsd(route.priceUsd);
+      collateralUsd[routeKey][chainName] = usdForBalance(balance, route.decimals, price);
     }
-    ethUsd = await chainlinkEthUsd(env.ETHEREUM_MAINNET_RPC_URL, feed);
-    ok("ETH/USD feed", formatUsd(ethUsd));
+    const routeTvl = Object.values(collateralUsd[routeKey]).reduce((total, value) => total + value, 0n);
+    ok(`${routeKey.toUpperCase()} aggregate collateral`, formatUsd(routeTvl));
   }
-
-  for (const [asset, route] of Object.entries(config.routes)) {
-    const router = ethereum.bridgeRoutes?.[route.routeKey]?.sourceRouter || ethereum.contracts?.[`${asset.toLowerCase()}WarpRouter`];
-    if (!isAddress(router)) {
-      const message = "route router not recorded yet";
-      if (releaseMode) blocked(`${asset} TVL`, message);
-      else warn(`${asset} TVL`, message);
-      continue;
-    }
-
-    const balance =
-      route.token === "ETH"
-        ? await nativeBalance(env.ETHEREUM_MAINNET_RPC_URL, router)
-        : await erc20Balance(env.ETHEREUM_MAINNET_RPC_URL, route.token, router);
-    const price = route.priceSource === "chainlink-eth-usd" ? ethUsd : parseUsd(route.priceUsd);
-    const tvl = usdForBalance(balance, route.decimals, price);
-    const cap = parseUsd(route.totalTvlLimitUsd);
-    if (tvl <= cap) {
-      ok(`${asset} TVL`, `${formatUsd(tvl)} <= ${formatUsd(cap)}`);
-    } else {
-      blocked(`${asset} TVL`, `${formatUsd(tvl)} exceeds ${formatUsd(cap)}`);
-    }
-  }
+  const aggregate = aggregateTvlUsd(collateralUsd);
+  const cap = parseUsd(config.aggregateTvlLimitUsd);
+  if (aggregate <= cap) ok("Total bridge collateral", `${formatUsd(aggregate)} <= ${formatUsd(cap)}`);
+  else blocked("Total bridge collateral", `${formatUsd(aggregate)} exceeds ${formatUsd(cap)}`);
 }
 
 async function main() {
-  const [env, config] = await Promise.all([
-    readEnv(),
-    readJson("ops/hyperlane/caps.mainnet.json"),
-  ]);
-  if (!config) throw new Error("Missing ops/hyperlane/caps.mainnet.json");
-
-  validateReviewDate(env);
-  await validateTemplates(config);
+  const [env, config] = await Promise.all([readEnv(), readJson("ops/hyperlane/caps.mainnet.json")]);
+  if (!config) throw new Error("Missing caps.mainnet.json");
+  validateReview(env);
+  await validateTemplates(config, env);
   await validateLiveTvl(config, env);
-
-  const counts = checks.reduce(
-    (acc, check) => {
-      acc[check.status] += 1;
-      return acc;
-    },
-    { OK: 0, WARN: 0, BLOCKED: 0 },
-  );
-
+  const counts = checks.reduce((acc, check) => ({ ...acc, [check.status]: acc[check.status] + 1 }), {
+    OK: 0,
+    WARN: 0,
+    BLOCKED: 0,
+  });
   console.log("Bridge cap checks:");
-  for (const check of checks) {
-    console.log(`[${check.status}] ${check.label}${check.detail ? ` - ${check.detail}` : ""}`);
-  }
+  for (const check of checks) console.log(`[${check.status}] ${check.label}${check.detail ? ` - ${check.detail}` : ""}`);
   console.log(`Summary: ${counts.OK} OK, ${counts.WARN} warnings, ${counts.BLOCKED} blocked`);
-
   if (counts.BLOCKED > 0) process.exitCode = 1;
 }
 

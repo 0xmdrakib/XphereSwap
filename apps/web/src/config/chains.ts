@@ -1,7 +1,7 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { injectedWallet, metaMaskWallet, rabbyWallet, walletConnectWallet } from "@rainbow-me/rainbowkit/wallets";
 import { defineChain } from "viem";
-import { mainnet, sepolia } from "wagmi/chains";
+import { base, mainnet, sepolia } from "wagmi/chains";
 
 const compact = <T,>(items: Array<T | undefined | "">): T[] => items.filter(Boolean) as T[];
 
@@ -15,6 +15,16 @@ export const xphereRpcUrls = compact([
 export const xphereTestnetRpcUrls = compact([
   import.meta.env.VITE_XPHERE_TESTNET_RPC_URL,
   "https://testnet.x-phere.com",
+]);
+
+export const ethereumMainnetRpcUrls = compact([
+  import.meta.env.VITE_ETHEREUM_MAINNET_RPC_URL,
+  ...mainnet.rpcUrls.default.http,
+]);
+
+export const baseMainnetRpcUrls = compact([
+  import.meta.env.VITE_BASE_MAINNET_RPC_URL,
+  ...base.rpcUrls.default.http,
 ]);
 
 export const usesDedicatedXphereRpc = Boolean(import.meta.env.VITE_XPHERE_MAINNET_RPC_URL);
@@ -43,6 +53,22 @@ export const xphereTestnet = defineChain({
   },
 });
 
+export const ethereumMainnet = defineChain({
+  ...mainnet,
+  rpcUrls: {
+    ...mainnet.rpcUrls,
+    default: { http: ethereumMainnetRpcUrls },
+  },
+});
+
+export const baseMainnet = defineChain({
+  ...base,
+  rpcUrls: {
+    ...base.rpcUrls,
+    default: { http: baseMainnetRpcUrls },
+  },
+});
+
 export const localHardhat = defineChain({
   id: 31337,
   name: "Local Xphere Demo",
@@ -65,11 +91,13 @@ export const isLocalSwap = import.meta.env.VITE_SWAP_CHAIN === "localhost";
 export const isXphereTestnetSwap = import.meta.env.VITE_SWAP_CHAIN === "xphere-testnet";
 export const isLocalBridge = import.meta.env.VITE_BRIDGE_MODE === "local";
 export const swapChain = isLocalSwap ? localHardhat : isXphereTestnetSwap ? xphereTestnet : xphere;
-export const bridgeEthereumChain = isLocalBridge ? localEthereum : mainnet;
+export const bridgeEthereumChain = isLocalBridge ? localEthereum : ethereumMainnet;
 export const bridgeXphereChain = isLocalBridge ? localHardhat : isXphereTestnetSwap ? xphereTestnet : xphere;
+export const bridgeBaseChain = baseMainnet;
 
 export const hyperlaneDomains = {
   ethereum: 1,
+  base: 8453,
   xphere: 20250217,
   xphereTestnet: 1998991,
   localEthereum: 31338,
@@ -85,6 +113,6 @@ export const wagmiConfig = getDefaultConfig({
       wallets: [metaMaskWallet, rabbyWallet, injectedWallet, walletConnectWallet],
     },
   ],
-  chains: [localHardhat, localEthereum, xphere, mainnet, xphereTestnet, sepolia],
+  chains: [localHardhat, localEthereum, xphere, ethereumMainnet, baseMainnet, xphereTestnet, sepolia],
   ssr: false,
 });

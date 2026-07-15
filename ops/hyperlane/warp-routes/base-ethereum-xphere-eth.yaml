@@ -1,0 +1,41 @@
+# Deployment-ready shared ETH route. The route remains disabled in the web
+# application until the post-deploy security apply and release gates pass.
+routeId: ETH/base-ethereum-xphere
+asset: ETH
+tokens:
+  - chainName: base
+    type: collateralNative
+    name: Ether
+    symbol: ETH
+    decimals: 18
+  - chainName: ethereum
+    type: collateralNative
+    name: Ether
+    symbol: ETH
+    decimals: 18
+  - chainName: xphere
+    type: synthetic
+    name: Xphere Bridged ETH
+    symbol: xETH
+    decimals: 18
+options:
+  totalTvlLimitUsd: 100000
+  owners:
+    base: "${BASE_PROTOCOL_ADMIN_SAFE}"
+    ethereum: "${ETHEREUM_PROTOCOL_ADMIN_SAFE}"
+    xphere: "${XPHERE_PROTOCOL_ADMIN_SAFE}"
+  initialSecurity:
+    type: staticAggregationIsm
+    threshold: 2
+    modules:
+      - type: messageIdMultisigIsm
+        threshold: 2
+        validators:
+          - "${HYPERLANE_VALIDATOR_1}"
+          - "${HYPERLANE_VALIDATOR_2}"
+          - "${HYPERLANE_VALIDATOR_3}"
+      - type: pausableIsm
+  finalSecurity:
+    type: staticAggregationIsm
+    threshold: 3
+    rateLimitEnv: BRIDGE_ETH_DAILY_CAP_WEI

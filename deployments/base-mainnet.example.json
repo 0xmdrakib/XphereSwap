@@ -1,8 +1,8 @@
 {
-  "chainId": 1,
+  "chainId": 8453,
   "contracts": {},
   "tokens": {
-    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
   },
   "router": null,
   "factory": null,
@@ -19,11 +19,11 @@
       "owner": "0x0000000000000000000000000000000000000000",
       "securityApplied": false,
       "remoteDomains": {
-        "base": 8453,
+        "ethereum": 1,
         "xphere": 20250217
       },
       "remoteRouters": {
-        "base": "0x0000000000000000000000000000000000000000",
+        "ethereum": "0x0000000000000000000000000000000000000000",
         "xphere": "0x0000000000000000000000000000000000000000"
       }
     },
@@ -32,17 +32,17 @@
       "routeId": "USDC/base-ethereum-xphere",
       "mailbox": "0x0000000000000000000000000000000000000000",
       "router": "0x0000000000000000000000000000000000000000",
-      "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       "tokenSymbol": "USDC",
       "interchainSecurityModule": "0x0000000000000000000000000000000000000000",
       "owner": "0x0000000000000000000000000000000000000000",
       "securityApplied": false,
       "remoteDomains": {
-        "base": 8453,
+        "ethereum": 1,
         "xphere": 20250217
       },
       "remoteRouters": {
-        "base": "0x0000000000000000000000000000000000000000",
+        "ethereum": "0x0000000000000000000000000000000000000000",
         "xphere": "0x0000000000000000000000000000000000000000"
       }
     }

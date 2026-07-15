@@ -1,117 +1,163 @@
-# Hyperlane Deployment Runbook
+# Hyperlane Mainnet Deployment Runbook
+
+## Current State
+
+The bridge is not live. This runbook prepares Ethereum <-> Xphere and Base <-> Xphere routes for a future reviewed release. It does not authorize public use, Vercel transaction enablement, or a live-bridge announcement.
+
+Production assets:
+
+- Native ETH on Ethereum and Base -> one shared xETH synthetic token on Xphere.
+- Official USDC on Ethereum and Base -> one shared xUSDC synthetic token on Xphere.
+- Base <-> Ethereum is not exposed in the XphereSwap UI.
 
 ## 1. Preconditions
 
-- `PROTOCOL_ADMIN_SAFE` is a 3-of-5 Safe-controlled admin.
-- Dedicated RPCs are configured for Ethereum and Xphere.
-- Three validator hosts are online, funded, backed up, and geographically separated.
-- Relayer host is funded on both chains.
-- Testnet route has completed lock/mint and burn/release drills.
+- Run repository tooling through Node 22.
+- Use dedicated RPCs for Ethereum, Base, and Xphere.
+- Configure three unique contract owners:
+  - `ETHEREUM_PROTOCOL_ADMIN_SAFE`
+  - `BASE_PROTOCOL_ADMIN_SAFE`
+  - `XPHERE_PROTOCOL_ADMIN_SAFE`
+- Do not use `PROTOCOL_ADMIN_SAFE` as a bridge owner fallback.
+- Configure three unique validator signers and a funded relayer.
+- Fund the deployer above the reviewed thresholds:
+  - Xphere: `MIN_XPHERE_DEPLOYER_XP` (probe default: 1 XP)
+  - Ethereum: `MIN_ETHEREUM_DEPLOYER_ETH` (probe default: 0.1 ETH)
+  - Base: `MIN_BASE_DEPLOYER_ETH` (probe default: 0.05 ETH)
+- Set `BRIDGE_ETH_DAILY_CAP_WEI` to a reviewed positive value divisible by `86400`.
+- Keep `VITE_BRIDGE_RELEASED=false`.
 
-## 2. Install CLI
+Run the non-live gate first:
 
 ```bash
-pnpm bridge:hyperlane -- --help
+pnpm node:run22 -- pnpm mainnet:orchestrate
 ```
 
-The repo wrapper uses `npx`, sets a Windows-safe npm cache, and passes the official Hyperlane registry plus the generated local Xphere registry. On this Windows profile, direct `pnpm dlx @hyperlane-xyz/cli` can fail while loading the CLI wasm bundle from a path containing a space.
+## 2. Validate The Pinned Toolchain
 
-## 3. Validate local configs
+Hyperlane CLI and SDK are pinned to `36.0.0`. The wrapper uses the workspace binary and a Windows-safe mirrored bundle when the repository path contains spaces.
 
 ```bash
-pnpm bridge:validate
-pnpm bridge:caps
-pnpm bridge:readiness
-pnpm mainnet:orchestrate
+pnpm node:run22 -- pnpm bridge:hyperlane -- --version
+pnpm node:run22 -- pnpm bridge:validate
+pnpm node:run22 -- pnpm bridge:caps
 ```
 
-`bridge:validate` and `bridge:caps` must pass before using the YAML files. `bridge:readiness` is expected to fail until deployer key, Safe addresses, validator addresses, dedicated RPCs, cap acknowledgement, and deployed Warp Route addresses are provided.
-`mainnet:orchestrate` performs the full dry gate. Use `pnpm mainnet:orchestrate:live` after funding and `.env` completion to continue live deployment from the current artifacts.
-
-## 4. Register Xphere metadata
-
-Use `ops/hyperlane/chains/xphere-mainnet.yaml` as the chain metadata source. Keep `domainId` equal to `20250217`.
+## 3. Prepare Registry And Xphere Core
 
 ```bash
-pnpm bridge:prepare-registry
-pnpm bridge:hyperlane -- registry addresses --chain ethereum --contract mailbox
+pnpm node:run22 -- pnpm bridge:prepare-registry
+pnpm node:run22 -- pnpm bridge:core:deploy
+pnpm node:run22 -- pnpm bridge:sync-artifacts
 ```
 
-If `pnpm bridge:hyperlane -- registry rpc --chain xphere` does not resolve the local Xphere registry on Windows, run the Hyperlane deployment steps from Linux/WSL/CI with Node 20 or 22. The repo still validates the Xphere metadata through `pnpm bridge:validate`.
-
-## 5. Deploy Xphere core
+If automatic sync cannot identify the Xphere core addresses, record the reviewed output:
 
 ```bash
-pnpm bridge:core:deploy
-```
-
-Record Mailbox, InterchainGasPaymaster, ValidatorAnnounce, and default ISM addresses in `deployments/xphere-mainnet.local.json`.
-
-```bash
-pnpm bridge:sync-artifacts
 pnpm bridge:record-core \
   --mailbox 0x... \
   --interchain-gas-paymaster 0x... \
   --validator-announce 0x... \
   --interchain-security-module 0x...
-pnpm bridge:prepare-registry
 ```
 
-## 6. Deploy Warp Routes
+Verify each address on the relevant explorer before continuing.
 
-Current Hyperlane CLI versions deploy routes from registry route IDs. `pnpm bridge:render-routes` renders the reviewed templates into `ops/hyperlane/generated` and also writes local registry deployment configs under `ops/hyperlane/.registry/deployments/warp_routes`.
+## 4. Phase One Route Deployment
+
+Phase one uses a 2-of-2 static aggregation of:
+
+- 2-of-3 message-ID multisig ISM.
+- Safe-owned Pausable ISM.
 
 ```bash
-pnpm bridge:render-routes
-
-pnpm bridge:hyperlane -- warp deploy \
-  --id USDC/ethereum-xphere
-
-pnpm bridge:hyperlane -- warp deploy \
-  --id USDT/ethereum-xphere
-
-pnpm bridge:hyperlane -- warp deploy \
-  --id ETH/ethereum-xphere
+pnpm node:run22 -- pnpm bridge:render-routes
+pnpm node:run22 -- pnpm bridge:hyperlane -- warp deploy --id ETH/base-ethereum-xphere
+pnpm node:run22 -- pnpm bridge:hyperlane -- warp deploy --id USDC/base-ethereum-xphere
+pnpm node:run22 -- pnpm bridge:sync-artifacts
 ```
 
-Transfer route ownership to `PROTOCOL_ADMIN_SAFE` before public beta.
-
-After each deployment, record the live routers and Xphere synthetic token addresses:
+If sync does not produce complete normalized artifacts, record each route manually:
 
 ```bash
-pnpm bridge:sync-artifacts
-pnpm bridge:record-route usdc --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x...
-pnpm bridge:record-route usdt --ethereum-router 0x... --xphere-router 0x... --xphere-token 0x...
-pnpm bridge:record-route native --ethereum-router 0x... --xphere-router 0x... --xphere-token 0xXethToken
+pnpm bridge:record-route eth \
+  --base-router 0x... --ethereum-router 0x... --xphere-router 0x... \
+  --xphere-token 0x... \
+  --base-mailbox 0x... --ethereum-mailbox 0x... --xphere-mailbox 0x... \
+  --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...
+
+pnpm bridge:record-route usdc \
+  --base-router 0x... --ethereum-router 0x... --xphere-router 0x... \
+  --xphere-token 0x... \
+  --base-mailbox 0x... --ethereum-mailbox 0x... --xphere-mailbox 0x... \
+  --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...
 ```
 
-`bridge:sync-artifacts` reads common Hyperlane registry artifact shapes and records addresses automatically when the CLI writes them. Use the manual `record-*` commands only when the CLI output must be copied from `ops/hyperlane/generated/hyperlane-last.log`.
+Confirm the xETH address is shared by both ETH origins and the xUSDC address is shared by both USDC origins.
 
-## 7. Operate validators and relayer
+## 5. Phase Two Security Apply
 
-- Validators: 2-of-3 multisig ISM, independent keys, independent hosts.
-- Relayer: watches Ethereum and Xphere, funded on both sides, alerting on pending message age.
-- Alerts: relayer balance low, validator down, message age over 10 minutes, TVL over caps.
+Phase two updates every router to a 3-of-3 static aggregation:
 
-## 8. Frontend config
+- 2-of-3 message-ID multisig ISM.
+- Safe-owned Pausable ISM.
+- Router-bound RateLimited ISM.
 
-Set the route addresses:
+USDC uses `24,999,926,400` base units per day. ETH uses the reviewed `BRIDGE_ETH_DAILY_CAP_WEI`.
 
 ```bash
-VITE_ETHEREUM_USDC_WARP_ROUTER=
-VITE_XPHERE_USDC_WARP_ROUTER=
-VITE_ETHEREUM_USDT_WARP_ROUTER=
-VITE_XPHERE_USDT_WARP_ROUTER=
-VITE_ETHEREUM_NATIVE_WARP_ROUTER=
-VITE_XPHERE_NATIVE_WARP_ROUTER=
-VITE_XPHERE_XETH=
+pnpm node:run22 -- pnpm bridge:render-security
+pnpm node:run22 -- pnpm bridge:apply-security:live
 ```
 
-Then run:
+Record the final ISMs after verifying the applied configuration:
+
+```bash
+pnpm bridge:record-security eth \
+  --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...
+
+pnpm bridge:record-security usdc \
+  --base-ism 0x... --ethereum-ism 0x... --xphere-ism 0x...
+```
+
+## 6. Frontend Preview Sync
 
 ```bash
 pnpm sync:web-env:xphere-mainnet
-pnpm bridge:caps:release
 pnpm build:web
+```
+
+Required public fields include all three Mailboxes, six routers, xETH, xUSDC, Base/Ethereum RPCs, and Xphere RPC. Leave `VITE_BRIDGE_RELEASED=false`; the Bridge UI must continue to show `Not live` and disable Quote/Bridge actions.
+
+## 7. Release Drills
+
+Before changing the release flag, complete low-value delivery tests for:
+
+1. Ethereum ETH -> Xphere xETH
+2. Base ETH -> Xphere xETH
+3. Xphere xETH -> Ethereum ETH
+4. Xphere xETH -> Base ETH
+5. Ethereum USDC -> Xphere xUSDC
+6. Base USDC -> Xphere xUSDC
+7. Xphere xUSDC -> Ethereum USDC
+8. Xphere xUSDC -> Base USDC
+
+For every test, retain source transaction hash, `DispatchId`, destination delivery evidence, quoted gas, delivered amount, and elapsed time.
+
+Release also requires:
+
+- Fresh aggregate collateral check below `$100,000`.
+- Validator and relayer monitoring.
+- Funded destination collateral for Xphere withdrawals.
+- Successful pause and unpause drill for both assets.
+- Team security approval.
+
+Only after approval:
+
+```bash
+pnpm bridge:readiness
+pnpm bridge:caps:release
 pnpm release:mainnet-beta
 ```
+
+The release command sends no on-chain transaction and does not publish Vercel automatically.

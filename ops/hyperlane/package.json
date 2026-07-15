@@ -8,16 +8,20 @@
     "validate:configs": "node scripts/validate-configs.mjs",
     "validate:artifacts": "node scripts/validate-artifacts.mjs",
     "render-routes": "node scripts/render-warp-routes.mjs",
+    "render-security": "node scripts/render-security-update.mjs",
     "sync-artifacts": "node scripts/sync-artifacts.mjs",
     "check-caps": "node scripts/check-caps.mjs",
     "check-caps:release": "node scripts/check-caps.mjs --release",
     "readiness": "node scripts/readiness.mjs",
+    "test:unit": "node --test test/*.test.mjs",
     "build": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs",
-    "test": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs",
+    "test": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs && node --test test/*.test.mjs",
     "lint": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs",
     "typecheck": "node scripts/validate-configs.mjs && node scripts/validate-artifacts.mjs"
   },
   "dependencies": {
+    "@hyperlane-xyz/cli": "36.0.0",
+    "@hyperlane-xyz/sdk": "36.0.0",
     "yaml": "^2.8.1"
   }
 }

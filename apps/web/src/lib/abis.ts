@@ -175,3 +175,18 @@ export const warpRouterAbi = [
     outputs: [{ type: "bytes32" }],
   },
 ] as const;
+
+export const mailboxAbi = [
+  {
+    type: "event",
+    name: "DispatchId",
+    inputs: [{ name: "messageId", type: "bytes32", indexed: true }],
+  },
+  {
+    type: "function",
+    name: "delivered",
+    stateMutability: "view",
+    inputs: [{ name: "messageId", type: "bytes32" }],
+    outputs: [{ type: "bool" }],
+  },
+] as const;

@@ -162,7 +162,6 @@ async function main() {
   const factory = configuredAddress("VITE_XPHERE_FACTORY");
   const router = configuredAddress("VITE_XPHERE_ROUTER");
   const xusdc = configuredAddress("XPHERE_XUSDC_TOKEN") || configuredAddress("VITE_XPHERE_XUSDC");
-  const xusdt = configuredAddress("XPHERE_XUSDT_TOKEN") || configuredAddress("VITE_XPHERE_XUSDT");
   const xeth = configuredAddress("XPHERE_XETH_TOKEN") || configuredAddress("VITE_XPHERE_XETH");
   const envXef = configuredAddress("XPHERE_XEF_TOKEN") || configuredAddress("VITE_XPHERE_XEF");
 
@@ -175,8 +174,6 @@ async function main() {
 
   if (xusdc) await probeToken(xusdc, "xUSDC", { symbol: "xUSDC", decimals: 6 });
   else warn("XPHERE_XUSDC_TOKEN", "not set; Hyperlane xUSDC token not deployed or not synced");
-  if (xusdt) await probeToken(xusdt, "xUSDT", { symbol: "xUSDT", decimals: 6 });
-  else warn("XPHERE_XUSDT_TOKEN", "not set; Hyperlane xUSDT token not deployed or not synced");
   if (xeth) await probeToken(xeth, "xETH", { symbol: "xETH", decimals: 18 });
   else warn("XPHERE_XETH_TOKEN", "not set; ETH can only bridge to Xphere after Hyperlane xETH is deployed");
 
@@ -193,12 +190,11 @@ async function main() {
 
   for (const key of [
     "VITE_XPHERE_USDC_WARP_ROUTER",
-    "VITE_XPHERE_USDT_WARP_ROUTER",
     "VITE_XPHERE_NATIVE_WARP_ROUTER",
   ]) {
     const address = configuredAddress(key);
     if (address) await requireCode(address, key);
-    else warn(key, "not set; bridge route cannot be live until Hyperlane deployment records this");
+    else warn(key, "not set; bridge route remains preview-only until Hyperlane deployment records this");
   }
 
   await probeExplorer();
