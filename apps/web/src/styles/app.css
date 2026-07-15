@@ -217,16 +217,21 @@ a {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  border-color: rgba(20, 20, 19, 0.16);
+  background: #fffdfa;
+  box-shadow:
+    0 1px 2px rgba(20, 20, 19, 0.06),
+    0 6px 18px rgba(20, 20, 19, 0.05);
   padding: 6px 7px 6px 13px;
 }
 
 .wallet-address {
   min-width: 0;
   overflow: hidden;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-family: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -260,9 +265,17 @@ a {
   min-height: 30px;
   border: 0;
   border-radius: 9999px;
-  background: transparent;
   color: var(--muted);
   padding: 0;
+}
+
+.wallet-disconnect {
+  background: rgba(20, 20, 19, 0.045);
+  color: var(--body);
+}
+
+.wallet-chooser-close {
+  background: transparent;
 }
 
 .wallet-disconnect:hover:not(:disabled),
@@ -285,14 +298,17 @@ a {
 
 .wallet-chooser {
   display: flex;
-  width: min(430px, 100%);
-  max-height: min(720px, calc(100vh - 40px));
+  width: min(440px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  max-height: min(760px, calc(100dvh - 40px));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(230, 223, 216, 0.96);
-  border-radius: 16px;
-  background: var(--canvas);
-  box-shadow: 0 28px 90px rgba(20, 20, 19, 0.24);
+  border: 1px solid rgba(220, 211, 200, 0.96);
+  border-radius: 24px;
+  background: #fcfbf7;
+  box-shadow:
+    0 32px 96px rgba(20, 20, 19, 0.26),
+    0 2px 8px rgba(20, 20, 19, 0.08);
 }
 
 .wallet-chooser-head {
@@ -300,7 +316,7 @@ a {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 22px 22px 16px;
+  padding: 30px 24px 20px;
 }
 
 .wallet-chooser-head > div {
@@ -324,11 +340,12 @@ a {
 
 .wallet-option-list {
   display: grid;
-  gap: 9px;
+  gap: 10px;
   min-height: 92px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 16px 16px;
+  scrollbar-gutter: stable;
+  padding: 0 18px 18px;
 }
 
 .wallet-option {
@@ -337,17 +354,19 @@ a {
   gap: 12px;
   align-items: center;
   min-height: 66px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: rgba(250, 249, 245, 0.74);
+  border: 1px solid rgba(220, 211, 200, 0.84);
+  border-radius: 14px;
+  background: #fffdfa;
   color: var(--ink);
+  box-shadow: 0 1px 2px rgba(20, 20, 19, 0.025);
   padding: 9px 12px;
   text-align: left;
 }
 
 .wallet-option:hover:not(:disabled) {
   border-color: rgba(204, 120, 92, 0.38);
-  background: var(--surface-card);
+  background: #fff8f3;
+  box-shadow: 0 5px 16px rgba(20, 20, 19, 0.055);
 }
 
 .wallet-option > span:nth-child(2),
@@ -427,7 +446,10 @@ a {
 
 .wallet-connect-section {
   border-top: 1px solid var(--hairline);
-  padding: 14px 16px 16px;
+  display: grid;
+  gap: 8px;
+  background: rgba(250, 249, 245, 0.74);
+  padding: 16px 18px 18px;
 }
 
 .wallet-connect-option {
@@ -436,24 +458,44 @@ a {
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
-  min-height: 64px;
-  border: 1px solid rgba(20, 20, 19, 0.16);
-  border-radius: 10px;
-  background: rgba(250, 249, 245, 0.82);
+  min-height: 68px;
+  border: 1px solid rgba(20, 20, 19, 0.17);
+  border-radius: 16px;
+  background: #fffdfa;
   color: var(--ink);
+  box-shadow:
+    0 1px 2px rgba(20, 20, 19, 0.04),
+    0 5px 16px rgba(20, 20, 19, 0.035);
   padding: 9px 12px;
   text-align: left;
 }
 
 .wallet-connect-option:hover:not(:disabled) {
   border-color: rgba(204, 120, 92, 0.42);
-  background: var(--surface-card);
+  background: #fff8f3;
+  box-shadow: 0 8px 22px rgba(20, 20, 19, 0.07);
 }
 
 .wallet-connect-icon {
   border-color: var(--tile-dark);
   background: var(--tile-dark);
   color: #ffffff;
+}
+
+.wallet-chooser-cancel {
+  width: 100%;
+  min-height: 38px;
+  justify-content: flex-start;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--body);
+  font-weight: 600;
+  padding: 8px;
+}
+
+.wallet-chooser-cancel:hover:not(:disabled) {
+  background: rgba(204, 120, 92, 0.1);
+  color: var(--primary-focus);
 }
 
 .network-strip {
@@ -1590,24 +1632,37 @@ a {
 @media (max-width: 460px) {
   .wallet-chooser-backdrop {
     align-items: end;
-    padding: 12px;
+    padding: 8px;
   }
 
   .wallet-chooser {
-    max-height: calc(100vh - 24px);
-    border-radius: 14px;
+    width: 100%;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 24px 24px 20px 20px;
   }
 
   .wallet-chooser-head {
-    padding: 19px 18px 14px;
+    padding: 26px 20px 18px;
   }
 
   .wallet-option-list {
+    gap: 8px;
     padding: 0 12px 12px;
   }
 
+  .wallet-option {
+    min-height: 62px;
+    border-radius: 13px;
+  }
+
   .wallet-connect-section {
-    padding: 12px;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .wallet-connect-option {
+    min-height: 64px;
+    border-radius: 15px;
   }
 
   .wallet-address {
@@ -1620,5 +1675,20 @@ a {
 
   .tab {
     min-width: 108px;
+  }
+}
+
+@media (max-height: 680px) {
+  .wallet-chooser-head {
+    padding-top: 22px;
+    padding-bottom: 14px;
+  }
+
+  .wallet-option {
+    min-height: 60px;
+  }
+
+  .wallet-connect-option {
+    min-height: 60px;
   }
 }

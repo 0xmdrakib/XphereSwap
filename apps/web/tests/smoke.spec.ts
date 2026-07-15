@@ -128,10 +128,14 @@ test("lists injected wallets and disconnects from the power control", async ({ p
   await expect(chooser.getByRole("button", { name: /Phantom/ })).toBeVisible();
   await expect(chooser.getByRole("button", { name: /Keplr/ })).toBeVisible();
   await expect(chooser.getByRole("button", { name: /WalletConnect Open WalletConnect/ })).toBeVisible();
+  await expect(chooser.getByRole("button", { name: "Cancel" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("wallet-chooser.png"), fullPage: false });
   await chooser.getByRole("button", { name: /Phantom/ }).click();
 
-  await expect(page.getByRole("group", { name: /Connected wallet 0xde57\.\.\.c25d/i })).toBeVisible();
+  const connectedWallet = page.getByRole("group", { name: /Connected wallet 0xde57\.\.\.c25d/i });
+  await expect(connectedWallet).toBeVisible();
+  await expect(connectedWallet).toHaveCSS("background-color", "rgb(255, 253, 250)");
+  await expect(connectedWallet.locator(".wallet-address")).toHaveCSS("color", "rgb(37, 37, 35)");
   const disconnectButton = page.getByRole("button", { name: "Disconnect wallet" });
   await expect(disconnectButton).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("connected-wallet-pill.png"), fullPage: false });
@@ -140,6 +144,8 @@ test("lists injected wallets and disconnects from the power control", async ({ p
 
   await page.getByRole("button", { name: "Connect Wallet" }).click();
   await expect(page.getByRole("dialog", { name: "Choose wallet" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog", { name: "Choose wallet" })).toBeHidden();
 });
 
 test("keeps the default bridge preview visibly not live and transaction-disabled", async ({ page }, testInfo) => {

@@ -332,6 +332,14 @@ export function WalletButton() {
                     <small>Open WalletConnect</small>
                   </span>
                 </button>
+                <button
+                  type="button"
+                  className="wallet-chooser-cancel"
+                  onClick={closeChooser}
+                  disabled={connectionPending}
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>,
