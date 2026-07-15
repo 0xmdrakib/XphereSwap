@@ -1,4 +1,3 @@
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
   Activity,
   ArrowDown,
@@ -9,7 +8,6 @@ import {
   Droplets,
   ExternalLink,
   Gauge,
-  HandCoins,
   Loader2,
   Plus,
   RefreshCw,
@@ -41,7 +39,6 @@ import {
 } from "wagmi";
 import { deployments, configuredForSwap } from "./config/deployments";
 import {
-  bridgeEthereumChain,
   isLocalBridge,
   isLocalSwap,
   swapChain,
@@ -49,9 +46,9 @@ import {
 import { TokenConfig, xphereSwapTokens } from "./config/tokens";
 import { BridgePanel } from "./features/bridge/BridgePanel";
 import { bridgeConfigComplete, bridgeTransactionsEnabled } from "./features/bridge/config";
+import { WalletButton } from "./features/wallet/WalletButton";
 import {
   erc20Abi,
-  localFaucetAbi,
   uniswapV2FactoryAbi,
   uniswapV2PairAbi,
   uniswapV2RouterAbi,
@@ -108,7 +105,6 @@ const XPHERE_GAS_LIMITS = {
 } as const;
 const COINGECKO_SIMPLE_PRICE_URL =
   "https://api.coingecko.com/api/v3/simple/price?ids=xphere,xeffy&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true";
-const LOCAL_FAUCET_TOP_UP_BALANCE_HEX = `0x${parseEther("100").toString(16)}`;
 const CUSTOM_TOKENS_STORAGE_KEY = "xphere-swap:customTokens:v1";
 
 export function App() {
@@ -169,39 +165,6 @@ export function App() {
         </div>
       </section>
     </main>
-  );
-}
-
-function WalletButton() {
-  return (
-    <ConnectButton.Custom>
-      {({ account, chain, mounted, openAccountModal, openChainModal, openConnectModal }) => {
-        const ready = mounted;
-        const connected = ready && account && chain;
-        if (!connected) {
-          return (
-            <button className="wallet-pill" onClick={openConnectModal}>
-              <span className="wallet-dot" />
-              Connect Wallet
-            </button>
-          );
-        }
-        if (chain.unsupported) {
-          return (
-            <button className="wallet-pill warning" onClick={openChainModal}>
-              <span className="wallet-dot" />
-              Wrong network
-            </button>
-          );
-        }
-        return (
-          <button className="wallet-pill connected" onClick={openAccountModal}>
-            <span className="wallet-dot" />
-            Connected <code>{account.displayName}</code>
-          </button>
-        );
-      }}
-    </ConnectButton.Custom>
   );
 }
 
@@ -1102,12 +1065,9 @@ function StatusPanel({
   const chainId = useChainId();
   const balance = useBalance({ address, chainId: swapChain.id });
   const publicClient = usePublicClient({ chainId: swapChain.id });
-  const ethereumPublicClient = usePublicClient({ chainId: bridgeEthereumChain.id });
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const explorerUrl = swapChain.blockExplorers?.default.url;
-  const xphereFaucetReady = Boolean(isLocalSwap && deployments.xphere.localFaucet);
-  const ethereumFaucetReady = Boolean(isLocalBridge && deployments.ethereum.localFaucet);
 
   async function ensureChain(targetChainId: number) {
     if (chainId !== targetChainId) await switchChainAsync({ chainId: targetChainId });
@@ -1120,31 +1080,6 @@ function StatusPanel({
   async function wait(hash: Hash) {
     if (!publicClient) throw new Error("RPC client is unavailable");
     await waitForSuccess(publicClient, hash);
-  }
-
-  async function claimLocalFunds(target: "xphere" | "ethereum") {
-    try {
-      if (!address) return;
-      const chain = target === "xphere" ? swapChain : bridgeEthereumChain;
-      const client = target === "xphere" ? publicClient : ethereumPublicClient;
-      const faucet = target === "xphere" ? deployments.xphere.localFaucet : deployments.ethereum.localFaucet;
-      const rpcUrl = chain.rpcUrls.default.http[0];
-      if (!client || !faucet) throw new Error("Local faucet is not configured");
-      setStatus({ kind: "working", text: `Funding ${chain.name}` });
-      await topUpLocalGas(rpcUrl, address);
-      await ensureChain(chain.id);
-      const hash = await writeContractAsync({
-        address: faucet,
-        abi: localFaucetAbi,
-        functionName: "claimAll",
-        args: [],
-      });
-      await waitForSuccess(client, hash);
-      if (target === "xphere") await balance.refetch();
-      setStatus({ kind: "success", text: `${chain.name} demo funds claimed: ${hash.slice(0, 10)}...` });
-    } catch (error) {
-      setStatus({ kind: "error", text: errorText(error) });
-    }
   }
 
   async function wrapXP() {
@@ -1250,6 +1185,7 @@ function StatusPanel({
     <Panel title="Status" badge="Mainnet beta gated">
       <div className="status-grid">
         <ReadinessItem label="Swap contracts" ready={configuredForSwap} />
+        <ReadinessItem label="XEF configured" ready={Boolean(deployments.xphere.xef)} />
         <ReadinessItem
           label="Bridge route records"
           ready={bridgeConfigComplete}
@@ -1262,8 +1198,6 @@ function StatusPanel({
           readyText="Released"
           blockedText="Not live"
         />
-        <ReadinessItem label="XEF configured" ready={Boolean(deployments.xphere.xef)} />
-        <ReadinessItem label="Demo faucets" ready={xphereFaucetReady || ethereumFaucetReady} />
       </div>
       <div className="balance-line">
         <span>{swapChain.name} balance</span>
@@ -1280,32 +1214,9 @@ function StatusPanel({
         <AddressRow label="xUSDC" value={deployments.xphere.xusdc} />
         <AddressRow label="xETH" value={deployments.xphere.xeth} />
         <AddressRow label="XEF" value={deployments.xphere.xef} />
-        <AddressRow label="XP faucet" value={deployments.xphere.localFaucet} />
-        <AddressRow label="ETH faucet" value={deployments.ethereum.localFaucet} externalUrl={undefined} />
         <AddressRow label={isLocalBridge ? "XP bridge" : "xETH bridge"} value={deployments.xphere.nativeWarpRouter} />
         <AddressRow label="ETH bridge" value={deployments.ethereum.nativeWarpRouter} externalUrl={undefined} />
       </div>
-      {xphereFaucetReady || ethereumFaucetReady ? (
-        <>
-          <div className="divider" />
-          <div className="faucet-card">
-            <div>
-              <span>Local faucet</span>
-              <strong>XP, ETH, USDC, USDT, XEF</strong>
-            </div>
-            <div className="faucet-actions">
-              <button className="secondary" onClick={() => claimLocalFunds("xphere")} disabled={!address || !xphereFaucetReady}>
-                <HandCoins size={16} />
-                Get Xphere funds
-              </button>
-              <button className="secondary" onClick={() => claimLocalFunds("ethereum")} disabled={!address || !ethereumFaucetReady}>
-                <HandCoins size={16} />
-                Get Ethereum funds
-              </button>
-            </div>
-          </div>
-        </>
-      ) : null}
       <div className="divider" />
       <div className="form-grid compact">
         <label className="field wide">
@@ -1759,26 +1670,6 @@ function slippageToBps(value: string) {
   if (!Number.isFinite(n)) return 50n;
   const clamped = Math.min(Math.max(n, 0.01), 50);
   return BigInt(Math.round(clamped * 100));
-}
-
-async function topUpLocalGas(rpcUrl: string, wallet: Address) {
-  if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(rpcUrl)) {
-    throw new Error("Local faucet gas top-up is restricted to localhost RPCs");
-  }
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: Date.now(),
-      method: "hardhat_setBalance",
-      params: [wallet, LOCAL_FAUCET_TOP_UP_BALANCE_HEX],
-    }),
-  });
-  const payload = await response.json();
-  if (!response.ok || payload.error) {
-    throw new Error(payload.error?.message || "Could not top up local gas");
-  }
 }
 
 function shortAddress(value: Address | string) {

@@ -15,11 +15,6 @@ export const wxpAbi = [
   { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ type: "uint256" }] },
 ] as const;
 
-export const localFaucetAbi = [
-  { type: "function", name: "claimAll", stateMutability: "nonpayable", inputs: [], outputs: [] },
-  { type: "function", name: "nativeAmount", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-] as const;
-
 export const uniswapV2RouterAbi = [
   {
     type: "function",

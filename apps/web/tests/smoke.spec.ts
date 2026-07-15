@@ -25,7 +25,60 @@ async function assertNoHorizontalOverflow(page: Page) {
   expect(layout.panelRight).toBeLessThanOrEqual(layout.viewportWidth + 1);
 }
 
-test("preserves the live swap dashboard and branding", async ({ page }) => {
+async function installMockInjectedWallet(page: Page, name: string, rdns: string, account: string) {
+  await page.addInitScript(
+    ({ walletName, walletRdns, walletAccount }) => {
+      const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+      let connected = false;
+      const provider = {
+        request: async ({ method }: { method: string }) => {
+          if (method === "wallet_requestPermissions") {
+            throw Object.assign(new Error("Method not supported"), { code: -32601 });
+          }
+          if (method === "eth_requestAccounts") {
+            connected = true;
+            return [walletAccount];
+          }
+          if (method === "eth_accounts") return connected ? [walletAccount] : [];
+          if (method === "eth_chainId") return "0x1";
+          if (method === "wallet_revokePermissions") {
+            connected = false;
+            return null;
+          }
+          return null;
+        },
+        on: (event: string, listener: (...args: unknown[]) => void) => {
+          const eventListeners = listeners.get(event) ?? new Set();
+          eventListeners.add(listener);
+          listeners.set(event, eventListeners);
+        },
+        removeListener: (event: string, listener: (...args: unknown[]) => void) => {
+          listeners.get(event)?.delete(listener);
+        },
+      };
+      const icon = `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#cc785c"/><circle cx="16" cy="16" r="7" fill="white"/></svg>`,
+      )}`;
+      const detail = {
+        info: {
+          uuid: crypto.randomUUID(),
+          name: walletName,
+          icon,
+          rdns: walletRdns,
+        },
+        provider,
+      };
+      const announce = () => {
+        window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail }));
+      };
+      window.addEventListener("eip6963:requestProvider", announce);
+      queueMicrotask(announce);
+    },
+    { walletName: name, walletRdns: rdns, walletAccount: account },
+  );
+}
+
+test("preserves the live swap dashboard and branding", async ({ page }, testInfo) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Xphere Swap" })).toBeVisible();
   await expect(page.locator(".brand-logo")).toHaveAttribute("src", "/xphereswap-icon.png");
@@ -41,6 +94,52 @@ test("preserves the live swap dashboard and branding", async ({ page }) => {
   await expect(page.getByLabel("Token A")).toHaveValue("XP");
   await expect(page.getByRole("button", { name: "Add liquidity" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove liquidity" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Status" }).click();
+  await expect(page.getByText("Demo faucets")).toHaveCount(0);
+  await expect(page.locator(".status-grid .ready-item span")).toHaveText([
+    "Swap contracts",
+    "XEF configured",
+    "Bridge route records",
+    "Bridge public state",
+  ]);
+  await expect(page.getByRole("button", { name: "Connect Wallet" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("status-readiness.png"), fullPage: true });
+});
+
+test("lists injected wallets and disconnects from the power control", async ({ page }, testInfo) => {
+  await installMockInjectedWallet(
+    page,
+    "Phantom",
+    "app.phantom.xphereswap-test",
+    "0xdE5700000000000000000000000000000000C25D",
+  );
+  await installMockInjectedWallet(
+    page,
+    "Keplr",
+    "app.keplr.xphereswap-test",
+    "0x8b230000000000000000000000000000000093E1",
+  );
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Connect Wallet" }).click();
+  const chooser = page.getByRole("dialog", { name: "Choose wallet" });
+  await expect(chooser).toBeVisible();
+  await expect(chooser.getByRole("button", { name: /Phantom/ })).toBeVisible();
+  await expect(chooser.getByRole("button", { name: /Keplr/ })).toBeVisible();
+  await expect(chooser.getByRole("button", { name: /WalletConnect Open WalletConnect/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("wallet-chooser.png"), fullPage: false });
+  await chooser.getByRole("button", { name: /Phantom/ }).click();
+
+  await expect(page.getByRole("group", { name: /Connected wallet 0xde57\.\.\.c25d/i })).toBeVisible();
+  const disconnectButton = page.getByRole("button", { name: "Disconnect wallet" });
+  await expect(disconnectButton).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("connected-wallet-pill.png"), fullPage: false });
+  await disconnectButton.click();
+  await expect(page.getByRole("button", { name: "Connect Wallet" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Connect Wallet" }).click();
+  await expect(page.getByRole("dialog", { name: "Choose wallet" })).toBeVisible();
 });
 
 test("keeps the default bridge preview visibly not live and transaction-disabled", async ({ page }, testInfo) => {

@@ -107,6 +107,7 @@ export const hyperlaneDomains = {
 export const wagmiConfig = getDefaultConfig({
   appName: "Xphere Swap",
   projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "xphere-swap-dev",
+  multiInjectedProviderDiscovery: true,
   wallets: [
     {
       groupName: "Recommended",
