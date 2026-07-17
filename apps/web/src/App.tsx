@@ -164,6 +164,10 @@ export function App() {
           )}
         </div>
       </section>
+
+      <footer className="site-footer">
+        © 2026 Md. Rakib • made with love and passion.
+      </footer>
     </main>
   );
 }
