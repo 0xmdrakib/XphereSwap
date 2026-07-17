@@ -2,7 +2,8 @@ import { Loader2, Power, Wallet, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Connector } from "wagmi";
-import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { swapChain } from "../../config/chains";
 
 type RainbowKitDetails = {
   iconBackground?: string;
@@ -45,6 +46,7 @@ export function WalletButton() {
     isPending: connectionPending,
   } = useConnect();
   const { disconnectAsync, isPending: disconnectPending } = useDisconnect();
+  const { switchChainAsync, isPending: switchPending } = useSwitchChain();
   const [chooserOpen, setChooserOpen] = useState(false);
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
   const [discovering, setDiscovering] = useState(true);
@@ -237,6 +239,15 @@ export function WalletButton() {
     }
   }
 
+  async function switchWalletNetwork() {
+    if (switchPending) return;
+    try {
+      await switchChainAsync({ chainId: swapChain.id });
+    } catch {
+      // The wallet remains connected so the user can retry or disconnect.
+    }
+  }
+
   const reconnecting = isConnecting || isReconnecting;
   const chooser =
     chooserOpen && typeof document !== "undefined"
@@ -360,9 +371,21 @@ export function WalletButton() {
         }
       >
         <span className="wallet-dot" />
-        <code className="wallet-address">
-          {unsupportedNetwork ? "Wrong network" : shortAddress(address)}
-        </code>
+        {unsupportedNetwork ? (
+          <button
+            type="button"
+            className="wallet-network-switch"
+            onClick={switchWalletNetwork}
+            disabled={switchPending}
+            aria-label={`Switch wallet to ${swapChain.name}`}
+            title={`Switch to ${swapChain.name}`}
+          >
+            {switchPending ? <Loader2 className="spin" size={14} /> : null}
+            Switch
+          </button>
+        ) : (
+          <code className="wallet-address">{shortAddress(address)}</code>
+        )}
         <button
           type="button"
           className="wallet-disconnect"

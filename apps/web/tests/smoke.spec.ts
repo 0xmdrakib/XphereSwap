@@ -19,10 +19,26 @@ async function assertNoHorizontalOverflow(page: Page) {
   const layout = await page.evaluate(() => ({
     documentWidth: document.documentElement.scrollWidth,
     viewportWidth: window.innerWidth,
-    panelRight: document.querySelector(".bridge-panel")?.getBoundingClientRect().right ?? 0,
+    panelRight: document.querySelector(".panel")?.getBoundingClientRect().right ?? 0,
   }));
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth + 1);
   expect(layout.panelRight).toBeLessThanOrEqual(layout.viewportWidth + 1);
+}
+
+async function assertMobileTouchTargets(page: Page) {
+  const undersized = await page.locator("button:visible, a.link-button:visible").evaluateAll((elements) =>
+    elements
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          label: element.getAttribute("aria-label") || element.textContent?.trim() || element.tagName,
+          height: rect.height,
+          width: rect.width,
+        };
+      })
+      .filter(({ label, height, width }) => !/Max|25%|50%|75%/i.test(label) && (height < 39 || width < 30)),
+  );
+  expect(undersized).toEqual([]);
 }
 
 async function installMockInjectedWallet(page: Page, name: string, rdns: string, account: string) {
@@ -204,4 +220,71 @@ test("renders all configured route directions while release remains locked", asy
   await expect(page.locator(".bridge-route-card").getByText("xETH", { exact: true })).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await page.screenshot({ path: testInfo.outputPath("bridge-configured-preview.png"), fullPage: true });
+});
+
+for (const viewport of [
+  { name: "phone-320", width: 320, height: 720 },
+  { name: "phone-360", width: 360, height: 800 },
+  { name: "pixel-7", width: 390, height: 844 },
+  { name: "tablet-768", width: 768, height: 1024 },
+  { name: "tablet-834", width: 834, height: 1112 },
+  { name: "desktop-1440", width: 1440, height: 900 },
+]) {
+  test(`keeps every workspace responsive at ${viewport.name}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto("/");
+
+    if (viewport.width <= 760) {
+      const header = page.locator(".topbar");
+      await expect(header).toHaveCSS("display", "grid");
+      expect((await header.boundingBox())?.height ?? 999).toBeLessThanOrEqual(124);
+      await expect(page.locator(".topnav-link svg").first()).toBeVisible();
+    } else if (viewport.width >= 1024) {
+      await expect(page.locator(".topnav-link svg").first()).toBeHidden();
+      expect((await page.locator(".topbar").boundingBox())?.height ?? 0).toBeLessThanOrEqual(70);
+    }
+
+    for (const tab of ["Swap", "Liquidity", "Bridge", "Status"]) {
+      await page.getByRole("tab", { name: tab }).click();
+      await expect(page.getByRole("heading", { name: tab, exact: true })).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+    }
+
+    if (viewport.width <= 760) await assertMobileTouchTargets(page);
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.name}-status.png`), fullPage: true });
+  });
+}
+
+test("renders the wallet chooser as a safe mobile bottom sheet", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await installMockInjectedWallet(
+    page,
+    "Phantom",
+    "app.phantom.xphereswap-mobile-test",
+    "0xdE5700000000000000000000000000000000C25D",
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Connect Wallet" }).click();
+
+  const chooser = page.getByRole("dialog", { name: "Choose wallet" });
+  await expect(chooser).toBeVisible();
+  const layout = await chooser.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      bottomGap: window.innerHeight - rect.bottom,
+      height: rect.height,
+      viewportHeight: window.innerHeight,
+      overflowY: getComputedStyle(element.querySelector(".wallet-option-list")!).overflowY,
+    };
+  });
+  expect(layout.bottomGap).toBeLessThanOrEqual(1);
+  expect(layout.height).toBeLessThanOrEqual(layout.viewportHeight * 0.93);
+  expect(layout.overflowY).toBe("auto");
+  await assertNoHorizontalOverflow(page);
+
+  await page.keyboard.press("Escape");
+  await expect(chooser).toBeHidden();
+  await expect(page.getByRole("button", { name: "Connect Wallet" })).toBeFocused();
+  await page.getByRole("button", { name: "Connect Wallet" }).click();
+  await page.screenshot({ path: testInfo.outputPath("mobile-wallet-bottom-sheet.png"), fullPage: false });
 });

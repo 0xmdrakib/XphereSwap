@@ -140,6 +140,7 @@ export function App() {
               className={activeTab === tab.id ? "topnav-link active" : "topnav-link"}
               onClick={() => setActiveTab(tab.id)}
             >
+              <tab.icon size={16} strokeWidth={1.9} aria-hidden="true" />
               {tab.label}
             </button>
           ))}
