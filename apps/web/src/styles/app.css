@@ -112,7 +112,7 @@ a {
   width: min(1440px, 100vw);
   min-height: 100vh;
   margin: 0 auto;
-  padding: 0 24px 56px;
+  padding: 0 24px 36px;
 }
 
 .topbar {
@@ -1517,7 +1517,7 @@ a {
 
 @media (max-width: 760px) {
   .app-shell {
-    padding: 0 14px 48px;
+    padding: 0 14px 32px;
   }
 
   .topbar {
