@@ -4,7 +4,7 @@ XphereSwap is a live Xphere mainnet swap MVP built for the Xphere ecosystem. It 
 
 Live app: [xphereswap.rakibhq.xyz](https://xphereswap.rakibhq.xyz)
 
-Repository: [0xmdrakib/XphereSwap](https://github.com/0xmdrakib/XphereSwap)
+---
 
 ## Overview
 
@@ -50,86 +50,6 @@ Explorer: [Tamsa Xphere Explorer](https://xp.tamsa.io)
 - Bridge preparation: Hyperlane Warp Route configs
 - Tests: Hardhat, Vitest, Playwright
 
-## Project Structure
-
-```text
-apps/web              XphereSwap frontend
-packages/contracts    Solidity contracts, deploy scripts, tests
-ops/hyperlane         Future bridge configs and runbooks
-deployments           Public deployment metadata and examples
-scripts               Environment, deployment, and utility scripts
-```
-
-## Getting Started
-
-Requirements:
-
-- Node.js 20 or 22
-- pnpm 11+
-
-Install dependencies:
-
-```bash
-pnpm install
-```
-
-Create a local environment file:
-
-```bash
-cp .env.example .env
-```
-
-Run the web app:
-
-```bash
-pnpm dev:web
-```
-
-Build the frontend:
-
-```bash
-pnpm build:web
-```
-
-Run contract tests:
-
-```bash
-pnpm test:contracts
-```
-
-Run frontend smoke tests:
-
-```bash
-pnpm --filter @xphere-swap/web test
-```
-
-## Environment
-
-The frontend includes public fallback addresses for the live Xphere mainnet AMM, so a fresh clone can render the main swap interface without private secrets.
-
-Use `.env.example` as the template for local configuration. Keep real `.env` files private. Do not commit deployer keys, RPC keys, WalletConnect project IDs, local deployment artifacts, generated operator files, build output, or logs.
-
-Useful frontend variables:
-
-```bash
-VITE_WALLETCONNECT_PROJECT_ID=
-VITE_XPHERE_MAINNET_RPC_URL=
-VITE_XPHERE_ROUTER=
-VITE_XPHERE_FACTORY=
-VITE_XPHERE_WXP=
-VITE_XPHERE_XEF=
-```
-
-## Local Demo
-
-The repo includes a full local demo for development:
-
-```bash
-pnpm demo:local
-```
-
-This starts local Xphere/Ethereum-style chains, deploys demo swap and bridge contracts, seeds local liquidity, starts a local relayer, and serves the frontend.
-
 ## Bridge Status
 
 Bridge code and Hyperlane configuration are included for the next phase. Mainnet bridge routes are not live in the public MVP yet.
@@ -152,4 +72,4 @@ Base-to-Ethereum routing and production USDT bridging are not included. The Brid
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](./LICENSE).
